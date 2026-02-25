@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Downloads
+downloads/
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+*.flv
+*.m4v
+*.ts
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# Build artifacts
+dist/
+build/
+.pkg-cache/
+*.tgz
+*.blob
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test
+test/downloads/
+test/output/
+coverage/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Credentials — NEVER commit real cookies or logins
+cookies/cookies.txt
+logins/logins.txt
+
+# Debug dumps
+*.html
+initials-debug.json
+gen-cookies-out.txt
+video-urls.txt
