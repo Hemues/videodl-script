@@ -1,0 +1,50 @@
+{
+  "name": "videodl-cli",
+  "version": "1.0.0",
+  "description": "A CLI video downloader and converter inspired by Video DownloadHelper - similar to yt-dlp",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": {
+    "videodl": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node test/test.js",
+    "build": "node build.mjs",
+    "build:linux": "node build.mjs --linux",
+    "build:windows": "node build.mjs --windows"
+  },
+  "keywords": [
+    "video",
+    "download",
+    "converter",
+    "cli",
+    "ffmpeg",
+    "videodl"
+  ],
+  "author": "",
+  "license": "GPL-2.0",
+  "dependencies": {
+    "astring": "^1.9.0",
+    "chalk": "^5.3.0",
+    "cheerio": "^1.0.0-rc.12",
+    "commander": "^12.0.0",
+    "cycletls": "^2.0.5",
+    "got": "^14.0.0",
+    "meriyah": "^6.1.4",
+    "progress": "^2.0.3",
+    "puppeteer-core": "^24.37.3",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-recaptcha": "^3.6.8",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.13.1",
+    "esbuild": "^0.24.2",
+    "postject": "^1.0.0-alpha.6",
+    "tough-cookie": "^6.0.0"
+  }
+}

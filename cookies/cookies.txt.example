@@ -1,0 +1,12 @@
+# Netscape HTTP Cookie File
+# https://curl.se/docs/http-cookies.html
+#
+# This is an example file. Replace with your own cookies.
+# Use the `videodl generate-cookies` command or `videodl browser-login <url>`
+# to generate cookies automatically.
+#
+# Format: domain	flag	path	secure	expiry	name	value
+#
+# Example:
+# .example.com	TRUE	/	TRUE	1893456000	session_id	your_session_token_here
+# .example.com	TRUE	/	TRUE	1893456000	auth_token	your_auth_token_here

@@ -1,0 +1,16 @@
+# Login credentials for automatic cookie generation
+#
+# Format: loginPageUrl::username::password
+# One entry per line. Lines starting with # are comments.
+#
+# WARNING: This file contains passwords. NEVER commit the real logins.txt to git.
+#          Only commit this example file (logins.txt.example).
+#
+# Usage:
+#   1. Copy this file to logins.txt:   cp logins.txt.example logins.txt
+#   2. Edit logins.txt with your real credentials
+#   3. Run: videodl generate-cookies
+#
+# Example:
+# https://site-ma.example.com/login::myusername::mypassword123
+# https://members.example.com/login::user@email.com::SecurePass!

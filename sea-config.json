@@ -1,0 +1,7 @@
+{
+  "main": "dist/videodl.cjs",
+  "output": "dist/videodl.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": true
+}
