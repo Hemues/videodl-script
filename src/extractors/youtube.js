@@ -15,11 +15,12 @@
  * parse YouTube's player JS AST and extract sig/n manipulation functions.
  */
 
+import { createHash } from 'node:crypto';
 import { BaseExtractor } from './base.js';
 import got from 'got';
 import fs from 'fs';
 import path from 'path';
-import { buildCookieHeader } from '../cookies.js';
+import { buildCookieHeader, getCookiesForUrl } from '../cookies.js';
 import { getSolverCode } from '../solver-loader.js';
 
 // Browser-like headers for YouTube page requests
@@ -45,9 +46,106 @@ const DOWNLOAD_HEADERS = {
   'Referer': 'https://www.youtube.com/'
 };
 
+// Default InnerTube API key (used when no per-client key is specified)
+const INNERTUBE_API_KEY = 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w';
+
 // InnerTube client configurations (from yt-dlp)
-// Priority: clients that DON'T need PO (Proof of Origin) tokens first
+// Order: authenticated clients first (SAPISIDHASH), then clients that don't
+// need PO tokens, then PO-token-required clients as last resort.
 const INNERTUBE_CLIENTS = [
+  // --- Authenticated clients (SAPISIDHASH + onBehalfOfUser) ---
+  // When auth works, these give full-resolution streams without PO tokens.
+  {
+    name: 'WEB_CREATOR',
+    clientNameId: 62,
+    client: {
+      clientName: 'WEB_CREATOR',
+      clientVersion: '1.20260228.01.00',
+      hl: 'en',
+      timeZone: 'UTC',
+      utcOffsetMinutes: 0,
+    },
+    apiKey: 'AIzaSyBUPetSUmoZL-OhlxA7wSac5XinrygCqMo',
+    requiresJs: true,
+    useSts: true,
+  },
+  {
+    name: 'TV',
+    clientNameId: 7,
+    client: {
+      clientName: 'TVHTML5',
+      clientVersion: '7.20260228.01.00',
+      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+      hl: 'en',
+    },
+    requiresJs: true,
+    useSts: true,
+  },
+  // --- Clients that reportedly don't need PO tokens ---
+  {
+    name: 'TV_EMBEDDED',
+    clientNameId: 85,
+    client: {
+      clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+      clientVersion: '2.0',
+      hl: 'en',
+    },
+    thirdParty: { embedUrl: 'https://www.youtube.com/' },
+    requiresJs: true,
+    useSts: true,
+  },
+  {
+    name: 'MEDIA_CONNECT',
+    clientNameId: 95,
+    client: {
+      clientName: 'MEDIA_CONNECT_FRONTEND',
+      clientVersion: '0.1',
+      hl: 'en',
+    },
+    requiresJs: false,
+  },
+  // --- IOS client: gives direct URLs, may work for some content ---
+  {
+    name: 'IOS',
+    clientNameId: 5,
+    client: {
+      clientName: 'IOS',
+      clientVersion: '20.03.02',
+      deviceMake: 'Apple',
+      deviceModel: 'iPhone16,2',
+      userAgent: 'com.google.ios.youtube/20.03.02 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
+      osName: 'iPhone',
+      osVersion: '18.3.1.22D72',
+      hl: 'en',
+    },
+    requiresJs: false,
+  },
+  // --- PO token usually required for full content ---
+  {
+    name: 'WEB',
+    clientNameId: 1,
+    client: {
+      clientName: 'WEB',
+      clientVersion: '2.20260228.01.00',
+      hl: 'en',
+      timeZone: 'UTC',
+      utcOffsetMinutes: 0,
+    },
+    requiresJs: true,
+    useSts: true,
+  },
+  {
+    name: 'MWEB',
+    clientNameId: 2,
+    client: {
+      clientName: 'MWEB',
+      clientVersion: '2.20260228.01.00',
+      hl: 'en',
+      userAgent: 'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)',
+    },
+    requiresJs: true,
+    useSts: true,
+  },
   {
     name: 'ANDROID_VR',
     clientNameId: 28,
@@ -65,52 +163,14 @@ const INNERTUBE_CLIENTS = [
     requiresJs: false,
   },
   {
-    name: 'TV',
-    clientNameId: 7,
-    client: {
-      clientName: 'TVHTML5',
-      clientVersion: '7.20260114.12.00',
-      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)',
-      hl: 'en',
-    },
-    requiresJs: true,
-    useSts: true,
-  },
-  {
     name: 'WEB_EMBEDDED',
     clientNameId: 56,
     client: {
       clientName: 'WEB_EMBEDDED_PLAYER',
-      clientVersion: '1.20260115.01.00',
+      clientVersion: '1.20260228.01.00',
       hl: 'en',
     },
-    // web_embedded needs thirdParty.embedUrl in the context
     thirdParty: { embedUrl: 'https://www.youtube.com/' },
-    requiresJs: true,
-    useSts: true,
-  },
-  {
-    name: 'MWEB',
-    clientNameId: 2,
-    client: {
-      clientName: 'MWEB',
-      clientVersion: '2.20260115.01.00',
-      hl: 'en',
-      userAgent: 'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)',
-    },
-    requiresJs: true,
-    useSts: true,
-  },
-  {
-    name: 'WEB',
-    clientNameId: 1,
-    client: {
-      clientName: 'WEB',
-      clientVersion: '2.20260114.08.00',
-      hl: 'en',
-      timeZone: 'UTC',
-      utcOffsetMinutes: 0,
-    },
     requiresJs: true,
     useSts: true,
   },
@@ -162,7 +222,9 @@ export class YouTubeExtractor extends BaseExtractor {
       /youtu\.be\/([a-zA-Z0-9_-]{11})/,
       /embed\/([a-zA-Z0-9_-]{11})/,
       /\bv\/([a-zA-Z0-9_-]{11})/,
-      /shorts\/([a-zA-Z0-9_-]{11})/
+      /shorts\/([a-zA-Z0-9_-]{11})/,
+      /live\/([a-zA-Z0-9_-]{11})/,
+      /clip\/([a-zA-Z0-9_-]{11})/
     ];
     for (const p of patterns) {
       const m = url.match(p);
@@ -195,6 +257,43 @@ export class YouTubeExtractor extends BaseExtractor {
     const m = html.match(/"VISITOR_DATA"\s*:\s*"([^"]+)"/) ||
               html.match(/visitorData\s*=\s*"([^"]+)"/);
     return m ? m[1] : null;
+  }
+
+  /**
+   * Generate SAPISIDHASH for YouTube API authentication.
+   * Algorithm (from yt-dlp): SAPISIDHASH <ts>_<sha1(ts + ' ' + SAPISID + ' ' + origin)>
+   * Uses __Secure-3PAPISID or SAPISID cookie value.
+   * @param {string} [origin='https://www.youtube.com']
+   * @returns {string|null} Authorization header value, or null if no SAPISID cookie
+   */
+  _generateSapisidHash(origin = 'https://www.youtube.com') {
+    if (!this._cookies || this._cookies.length === 0) return null;
+
+    // __Secure-3PAPISID is preferred (always present when logged in);
+    // fall back to SAPISID which may be absent in some cookie exports.
+    const sapisidCookie = this._cookies.find(c => c.name === '__Secure-3PAPISID') ||
+                          this._cookies.find(c => c.name === 'SAPISID');
+    if (!sapisidCookie || !sapisidCookie.value) return null;
+
+    const timeNow = Math.round(Date.now() / 1000);
+    const hash = createHash('sha1')
+      .update(`${timeNow} ${sapisidCookie.value} ${origin}`)
+      .digest('hex');
+
+    return `SAPISIDHASH ${timeNow}_${hash}`;
+  }
+
+  /**
+   * Extract the DATASYNC_ID from the page for X-Goog-PageId header.
+   * Required for downloading premium/member content when authenticated.
+   */
+  _extractDatasyncId(html) {
+    const m = html.match(/"DATASYNC_ID"\s*:\s*"([^"]*)"/) ||
+              html.match(/datasyncId\s*:\s*"([^"]*)"/);
+    if (!m) return null;
+    // Format is typically "number||" — extract the numeric part
+    const match = m[1].match(/^(\d+)/);
+    return match ? match[1] : null;
   }
 
   _decodeHtmlEntities(text) {
@@ -234,9 +333,17 @@ export class YouTubeExtractor extends BaseExtractor {
    * Call YouTube InnerTube Player API with a specific client config
    */
   async _callPlayerApi(videoId, clientConfig, sts, visitorData) {
-    const apiUrl = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
+    const apiKey = clientConfig.apiKey || INNERTUBE_API_KEY;
+    const apiUrl = `https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false`;
 
     const context = { client: { ...clientConfig.client } };
+
+    // Authenticated user context — yt-dlp sends onBehalfOfUser (datasyncId)
+    // for ALL authenticated API calls.  Without this, YouTube ignores the
+    // SAPISIDHASH header and treats the request as unauthenticated.
+    if (this._datasyncId) {
+      context.user = { onBehalfOfUser: this._datasyncId };
+    }
 
     // web_embedded needs thirdParty in the context
     if (clientConfig.thirdParty) {
@@ -273,6 +380,20 @@ export class YouTubeExtractor extends BaseExtractor {
       headers['Cookie'] = this._cookieHeader;
     }
 
+    // SAPISIDHASH authentication (yt-dlp algorithm):
+    // Required for YouTube to treat API calls as authenticated even when
+    // cookies are present.  Without this, YouTube serves preview/stub content
+    // for restricted videos (live replays, members-only, age-gated, etc.).
+    const sapisidHash = this._generateSapisidHash('https://www.youtube.com');
+    if (sapisidHash) {
+      headers['Authorization'] = sapisidHash;
+      headers['X-Goog-AuthUser'] = '0';
+      headers['X-Origin'] = 'https://www.youtube.com';
+      if (this._datasyncId) {
+        headers['X-Goog-PageId'] = this._datasyncId;
+      }
+    }
+
     const response = await got.post(apiUrl, {
       json: body,
       headers: headers,
@@ -285,10 +406,19 @@ export class YouTubeExtractor extends BaseExtractor {
 
   /**
    * Try multiple InnerTube clients to get the best format list.
-   * Returns the first response that has formats with URLs.
+   * Returns the first response that has formats with URLs, or null if all exhausted.
+   * @param {string} videoId
+   * @param {number} sts - signature timestamp
+   * @param {string} visitorData
+   * @param {Set<string>} [skipClients] - client names to skip (already tried)
    */
-  async _getFormatsFromApi(videoId, sts, visitorData) {
+  async _getFormatsFromApi(videoId, sts, visitorData, skipClients = new Set()) {
     for (const clientConfig of INNERTUBE_CLIENTS) {
+      if (skipClients.has(clientConfig.name)) continue;
+      // Mark client as tried immediately — prevents re-trying failed clients
+      // when the caller re-invokes after a probe rejection.
+      skipClients.add(clientConfig.name);
+
       try {
         console.log(`[${this.name}] Trying ${clientConfig.name} client...`);
         const response = await this._callPlayerApi(videoId, clientConfig, sts, visitorData);
@@ -301,6 +431,10 @@ export class YouTubeExtractor extends BaseExtractor {
           continue;
         }
 
+        // Log available streaming data keys for debugging
+        const sdKeys = Object.keys(sd).join(', ');
+        console.log(`[${this.name}] ${clientConfig.name}: streamingData keys: [${sdKeys}]`);
+
         const allFormats = [
           ...(sd.formats || []),
           ...(sd.adaptiveFormats || [])
@@ -311,17 +445,245 @@ export class YouTubeExtractor extends BaseExtractor {
         const withSigCipher = allFormats.filter(f => f.signatureCipher).length;
         const usable = withUrl + withSigCipher;
 
+        // Extract HLS manifest URL — live streams/replays often have one
+        const hlsManifestUrl = sd.hlsManifestUrl || null;
+        if (hlsManifestUrl) {
+          console.log(`[${this.name}] ${clientConfig.name}: HLS manifest available`);
+        }
+
         console.log(`[${this.name}] ${clientConfig.name}: ${allFormats.length} formats (${withUrl} url, ${withSigCipher} signatureCipher)`);
 
-        if (usable > 0) {
-          return { formats: allFormats, clientName: clientConfig.name, clientConfig, requiresJs: clientConfig.requiresJs };
+        if (usable === 0 && !hlsManifestUrl) continue;
+
+        // Extract PO (Proof of Origin) token from response — needed on format
+        // URLs for the CDN to serve real content instead of preview stubs.
+        const poToken = response.serviceIntegrityDimensions?.poToken || null;
+        if (poToken) {
+          console.log(`[${this.name}] ${clientConfig.name}: PO token available (${poToken.length} chars)`);
         }
+
+        return { formats: allFormats, clientName: clientConfig.name, clientConfig, requiresJs: clientConfig.requiresJs, poToken, hlsManifestUrl };
       } catch (e) {
         console.log(`[${this.name}] ${clientConfig.name} failed: ${e.message}`);
       }
     }
 
-    throw new Error('No InnerTube client returned downloadable formats');
+    return null;
+  }
+
+  /**
+   * Probe a format URL with a small Range request to verify the CDN serves
+   * real, full-length data (not just a stub/preview).
+   *
+   * @param {string} url - fully processed format URL
+   * @param {Object} clientConfig - InnerTube client config (for User-Agent)
+   * @param {Object} [opts]
+   * @param {number} [opts.expectedDuration] - expected video duration in seconds
+   * @returns {Promise<boolean>} true if the URL is usable
+   */
+  async _probeFormatUrl(url, clientConfig, opts = {}) {
+    try {
+      const probeHeaders = {
+        ...DOWNLOAD_HEADERS,
+        'User-Agent': clientConfig?.client?.userAgent || DOWNLOAD_HEADERS['User-Agent'],
+        'Range': 'bytes=0-1023',
+      };
+      if (this._cookieHeader) probeHeaders['Cookie'] = this._cookieHeader;
+
+      const resp = await got(url, {
+        headers: probeHeaders,
+        timeout: { request: 10000 },
+        responseType: 'buffer',
+        throwHttpErrors: false,
+      });
+
+      // Must be 200/206 with actual body bytes
+      if (resp.statusCode !== 200 && resp.statusCode !== 206) {
+        console.log(`[${this.name}] Probe: HTTP ${resp.statusCode}, body ${resp.body.length} bytes`);
+        return false;
+      }
+      if (resp.body.length === 0) {
+        console.log(`[${this.name}] Probe: HTTP ${resp.statusCode}, body 0 bytes`);
+        return false;
+      }
+
+      // Check Content-Range / Content-Length for suspiciously small streams.
+      // YouTube preview/stub responses typically have a complete file < 100 KB
+      // while real video streams are many megabytes.
+      const expectedDuration = opts.expectedDuration || 0;
+      if (expectedDuration > 30) { // only check for videos > 30 seconds
+        let fullSize = 0;
+        const cr = resp.headers['content-range']; // e.g. "bytes 0-1023/1234567"
+        if (cr) {
+          const m = cr.match(/\/(\d+)/);
+          if (m) fullSize = parseInt(m[1]);
+        }
+        if (!fullSize) {
+          fullSize = parseInt(resp.headers['content-length'] || '0');
+        }
+
+        // Heuristic: a real video stream should be at least ~10 KB per second
+        // of content (even at the lowest quality).  A 90-minute movie at
+        // lowest quality would be ~50 MB; a 5-second preview is ~50 KB.
+        const minExpectedBytes = expectedDuration * 1024; // ~1 KB/s absolute minimum
+        if (fullSize > 0 && fullSize < minExpectedBytes) {
+          console.log(`[${this.name}] Probe: Content is only ${(fullSize / 1024).toFixed(0)} KB but video is ${Math.round(expectedDuration)}s long — likely a preview/stub`);
+          return false;
+        }
+      }
+
+      return true;
+    } catch (e) {
+      console.log(`[${this.name}] Probe error: ${e.message}`);
+      return false;
+    }
+  }
+
+  // ========== HLS Master Playlist Parsing ==========
+
+  /**
+   * Parse an HLS master (variant) playlist into individual format entries.
+   * YouTube's demuxed HLS manifests contain separate video-only and audio-only
+   * variant streams.  Each `#EXT-X-STREAM-INF` line describes a variant with
+   * RESOLUTION, BANDWIDTH, CODECS, etc.  Audio-only variants have no
+   * RESOLUTION tag but do have an audio codec in CODECS.
+   *
+   * Returns an array of format objects compatible with the rest of the pipeline.
+   */
+  _parseHlsMasterPlaylist(playlist, masterUrl, headers) {
+    const lines = playlist.split('\n').map(l => l.trim());
+    const formats = [];
+    const baseUrl = masterUrl.replace(/[?#].*$/, '').replace(/\/[^/]*$/, '/');
+
+    // 1. Detect demuxed manifest: parse #EXT-X-MEDIA:TYPE=AUDIO tags.
+    //    In a demuxed YouTube HLS manifest, audio streams are separate #EXT-X-MEDIA entries
+    //    and the #EXT-X-STREAM-INF entries reference them via AUDIO="group" attribute.
+    const audioGroups = {};  // groupId → array of audio renditions
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('#EXT-X-MEDIA:')) continue;
+      const mediaAttrs = lines[i].substring('#EXT-X-MEDIA:'.length);
+      const mediaType = (mediaAttrs.match(/TYPE=([A-Z]+)/) || [])[1];
+      if (mediaType !== 'AUDIO') continue;
+
+      const groupId = (mediaAttrs.match(/GROUP-ID="([^"]+)"/) || [])[1] || '';
+      let uri = (mediaAttrs.match(/URI="([^"]+)"/) || [])[1] || '';
+      if (uri && !uri.startsWith('http')) uri = new URL(uri, masterUrl).toString();
+      const name = (mediaAttrs.match(/NAME="([^"]+)"/) || [])[1] || 'audio';
+      const channels = (mediaAttrs.match(/CHANNELS="(\d+)"/) || [])[1] || '';
+      const codecMatch = (mediaAttrs.match(/CODECS="([^"]+)"/) || [])[1] || '';
+
+      if (!audioGroups[groupId]) audioGroups[groupId] = [];
+      audioGroups[groupId].push({ uri, name, channels, codec: codecMatch, groupId });
+    }
+
+    const hasDemuxedAudio = Object.keys(audioGroups).length > 0;
+
+    // 2. Parse #EXT-X-STREAM-INF variants (video or combined)
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('#EXT-X-STREAM-INF:')) continue;
+
+      const attrs = lines[i].substring('#EXT-X-STREAM-INF:'.length);
+      // Next non-empty, non-comment line is the variant URL
+      let variantUrl = '';
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j] && !lines[j].startsWith('#')) {
+          variantUrl = lines[j];
+          break;
+        }
+      }
+      if (!variantUrl) continue;
+
+      // Resolve relative URLs
+      if (!variantUrl.startsWith('http')) {
+        variantUrl = new URL(variantUrl, masterUrl).toString();
+      }
+
+      // Parse attributes
+      const bandwidth = parseInt((attrs.match(/BANDWIDTH=(\d+)/) || [])[1] || '0');
+      const resParts = (attrs.match(/RESOLUTION=(\d+)x(\d+)/) || []);
+      const width = parseInt(resParts[1] || '0');
+      const height = parseInt(resParts[2] || '0');
+      const codecs = (attrs.match(/CODECS="([^"]+)"/) || [])[1] || '';
+      const fps = parseFloat((attrs.match(/FRAME-RATE=([\d.]+)/) || [])[1] || '0');
+      const audioGroupRef = (attrs.match(/AUDIO="([^"]+)"/) || [])[1] || '';
+
+      // Determine media type from codecs
+      const codecParts = codecs.split(',').map(c => c.trim());
+      const videoCodecs = codecParts.filter(c => /^(avc|hev|hvc|vp0?[89]|av01)/.test(c));
+      const audioCodecs = codecParts.filter(c => /^(mp4a|opus|ac-3|ec-3|flac|vorbis)/.test(c));
+
+      const hasVideo = videoCodecs.length > 0 || height > 0;
+      // If this variant references an AUDIO group, it's video-only (demuxed manifest).
+      // The CODECS attribute lists both video+audio per HLS spec, but actual stream is video-only.
+      const isDemuxedVideo = hasDemuxedAudio && !!audioGroupRef;
+      const hasAudio = isDemuxedVideo ? false : audioCodecs.length > 0;
+
+      const quality = height > 0 ? `${height}p` : `${Math.round(bandwidth / 1000)}k`;
+      const formatId = `hls-${height}p`;
+
+      formats.push({
+        quality: fps > 30 ? `${quality}${Math.round(fps)}` : quality,
+        url: variantUrl,
+        width,
+        height,
+        format_id: formatId,
+        ext: 'mp4',
+        protocol: 'hls',
+        hasVideo,
+        hasAudio,
+        mimeType: 'application/vnd.apple.mpegURL',
+        bitrate: bandwidth,
+        filesize: null,
+        fps: fps || null,
+        vcodec: videoCodecs[0] || null,
+        acodec: isDemuxedVideo ? null : (audioCodecs[0] || null),
+        headers,
+        _hlsMasterUrl: masterUrl,
+        _audioGroupRef: audioGroupRef || null,
+      });
+    }
+
+    // 3. Add audio-only formats from #EXT-X-MEDIA tags
+    if (hasDemuxedAudio) {
+      const seenAudioUrls = new Set();
+      for (const [groupId, renditions] of Object.entries(audioGroups)) {
+        for (const aud of renditions) {
+          if (!aud.uri || seenAudioUrls.has(aud.uri)) continue;
+          seenAudioUrls.add(aud.uri);
+
+          // Try to extract itag from URL for a better format_id
+          const itagMatch = aud.uri.match(/\/itag\/(\d+)\//);
+          const itagLabel = itagMatch ? `itag${itagMatch[1]}` : groupId;
+
+          // Estimate bitrate from codec or use a default
+          const bitrate = aud.codec && aud.codec.includes('mp4a') ? 128000 : 64000;
+          const bitrateK = Math.round(bitrate / 1000);
+
+          formats.push({
+            quality: `${bitrateK}k`,
+            url: aud.uri,
+            width: 0,
+            height: 0,
+            format_id: `hls-audio-${itagLabel}`,
+            ext: 'mp4',
+            protocol: 'hls',
+            hasVideo: false,
+            hasAudio: true,
+            mimeType: 'application/vnd.apple.mpegURL',
+            bitrate,
+            filesize: null,
+            fps: null,
+            vcodec: null,
+            acodec: aud.codec || 'mp4a.40.2',
+            headers,
+            _hlsMasterUrl: masterUrl,
+            _audioGroupId: groupId,
+          });
+        }
+      }
+    }
+
+    return formats;
   }
 
   // ========== Challenge Solving ==========
@@ -456,8 +818,11 @@ export class YouTubeExtractor extends BaseExtractor {
 
     // Store cookies for use in all sub-requests
     this._cookieHeader = '';
+    this._cookies = [];
     if (options.cookies && options.cookies.length > 0) {
       this._cookieHeader = buildCookieHeader(options.cookies, url);
+      // Keep structured cookie objects for SAPISIDHASH generation
+      this._cookies = getCookiesForUrl(options.cookies, 'https://www.youtube.com');
       if (this._cookieHeader) {
         console.log(`[${this.name}] Using ${options.cookies.length} cookies (${this._cookieHeader.split(';').length} matching)`);
       }
@@ -505,124 +870,458 @@ export class YouTubeExtractor extends BaseExtractor {
                     html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;/s);
     try { if (prMatch) pagePlayerResponse = JSON.parse(prMatch[1]); } catch {}
 
-    // 5. Try multiple InnerTube clients to get formats with URLs
-    const { formats: rawFormats, clientName, clientConfig, requiresJs } = await this._getFormatsFromApi(videoId, sts, visitorData);
+    // Extract datasync ID and log SAPISIDHASH availability
+    this._datasyncId = this._extractDatasyncId(html);
+    if (this._datasyncId) {
+      console.log(`[${this.name}] Datasync ID: ${this._datasyncId}`);
+    }
+    const sapisidTest = this._generateSapisidHash();
+    if (sapisidTest) {
+      console.log(`[${this.name}] SAPISIDHASH authentication available`);
+    } else if (this._cookieHeader) {
+      console.log(`[${this.name}] Warning: Cookies loaded but no SAPISID/__Secure-3PAPISID found — API calls will be unauthenticated`);
+    }
 
-    // 6. Process formats: collect challenges, build entries
-    const sigLengthsSet = new Set();
-    const nValuesSet = new Set();
-    const formatEntries = [];
+    // Expected video duration from page metadata (used for probe validation)
+    const videoDetails = pagePlayerResponse?.videoDetails || {};
+    const expectedDuration = videoDetails.lengthSeconds ? parseInt(videoDetails.lengthSeconds) : 0;
+    if (expectedDuration > 0) {
+      const durMin = Math.floor(expectedDuration / 60);
+      const durSec = expectedDuration % 60;
+      console.log(`[${this.name}] Expected duration: ${durMin}:${String(durSec).padStart(2, '0')}`);
+    }
 
-    for (const fmt of rawFormats) {
-      let fmtUrl = fmt.url || null;
-      let encryptedSig = null;
-      let sigParam = 'signature';
+    // 5-8. Try InnerTube clients with full challenge solving + URL probe.
+    //       If a client's processed URLs are rejected by the CDN, fall back
+    //       to the next client.  This is necessary because YouTube's n-challenge
+    //       parameters make raw URLs return 403 — probing must happen AFTER solving.
+    const triedClients = new Set();
+    let formats = null;
+    let clientName = null;
+    let clientConfig = null;
+    let hlsManifestUrl = null;  // Captured across iterations for HLS fallback
 
-      if (!fmtUrl && fmt.signatureCipher) {
-        const params = new URLSearchParams(fmt.signatureCipher);
-        fmtUrl = params.get('url');
-        encryptedSig = params.get('s');
-        sigParam = params.get('sp') || 'signature';
-        if (encryptedSig) sigLengthsSet.add(encryptedSig.length);
+    while (triedClients.size < INNERTUBE_CLIENTS.length) {
+      // 5. Get formats from next untried client
+      const apiResult = await this._getFormatsFromApi(videoId, sts, visitorData, triedClients);
+      if (!apiResult) break; // all clients exhausted
+
+      const { formats: rawFormats, clientName: cName, clientConfig: cConfig, poToken, hlsManifestUrl: hlsUrl } = apiResult;
+      if (hlsUrl && !hlsManifestUrl) hlsManifestUrl = hlsUrl;  // Keep first HLS URL
+      clientName = cName;
+      clientConfig = cConfig;
+
+      // 6. Process formats: collect challenges, build entries
+      const sigLengthsSet = new Set();
+      const nValuesSet = new Set();
+      const formatEntries = [];
+
+      for (const fmt of rawFormats) {
+        let fmtUrl = fmt.url || null;
+        let encryptedSig = null;
+        let sigParam = 'signature';
+
+        if (!fmtUrl && fmt.signatureCipher) {
+          const params = new URLSearchParams(fmt.signatureCipher);
+          fmtUrl = params.get('url');
+          encryptedSig = params.get('s');
+          sigParam = params.get('sp') || 'signature';
+          if (encryptedSig) sigLengthsSet.add(encryptedSig.length);
+        }
+
+        if (!fmtUrl) continue;
+
+        let nValue = null;
+        try {
+          nValue = new URL(fmtUrl).searchParams.get('n');
+          if (nValue) nValuesSet.add(nValue);
+        } catch {}
+
+        formatEntries.push({ raw: fmt, url: fmtUrl, encryptedSig, sigParam, nValue });
       }
 
-      if (!fmtUrl) continue;
+      console.log(`[${this.name}] Challenges: ${sigLengthsSet.size} sig, ${nValuesSet.size} n`);
 
-      let nValue = null;
-      try {
-        nValue = new URL(fmtUrl).searchParams.get('n');
-        if (nValue) nValuesSet.add(nValue);
-      } catch {}
+      // 7. Solve challenges if needed
+      if (sigLengthsSet.size > 0 || nValuesSet.size > 0) {
+        await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+      }
 
-      formatEntries.push({ raw: fmt, url: fmtUrl, encryptedSig, sigParam, nValue });
-    }
+      const cache = this._playerCache.get(playerUrl);
 
-    console.log(`[${this.name}] Challenges: ${sigLengthsSet.size} sig, ${nValuesSet.size} n`);
+      // Build per-client download headers (must match the client User-Agent for CDN validation)
+      const clientUA = cConfig?.client?.userAgent || DOWNLOAD_HEADERS['User-Agent'];
+      const formatDownloadHeaders = {
+        ...DOWNLOAD_HEADERS,
+        'User-Agent': clientUA
+      };
+      if (this._cookieHeader) formatDownloadHeaders['Cookie'] = this._cookieHeader;
 
-    // 7. Solve challenges if needed
-    if (sigLengthsSet.size > 0 || nValuesSet.size > 0) {
-      await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
-    }
+      // 8. Build final format list
+      const candidateFormats = [];
 
-    const cache = this._playerCache.get(playerUrl);
+      for (const entry of formatEntries) {
+        const { raw: fmt, encryptedSig, sigParam, nValue } = entry;
+        let finalUrl = entry.url;
 
-    // Build per-client download headers (must match the client User-Agent for CDN validation)
-    const clientUA = clientConfig?.client?.userAgent || DOWNLOAD_HEADERS['User-Agent'];
-    const formatDownloadHeaders = {
-      ...DOWNLOAD_HEADERS,
-      'User-Agent': clientUA
-    };
-    if (this._cookieHeader) formatDownloadHeaders['Cookie'] = this._cookieHeader;
+        // Apply signature decryption if needed
+        if (encryptedSig) {
+          const spec = cache.sigSpecs[encryptedSig.length];
+          if (!spec) {
+            console.warn(`[${this.name}] No sig spec for length ${encryptedSig.length}, skipping itag=${fmt.itag}`);
+            continue;
+          }
+          finalUrl = this._applySignature(spec, encryptedSig, sigParam, finalUrl);
+        }
 
-    // 8. Build final format list
-    const formats = [];
+        // Apply n-challenge result
+        if (nValue && cache?.nResults?.[nValue]) {
+          finalUrl = this._applyNChallenge(finalUrl, cache.nResults[nValue]);
+        }
 
-    for (const entry of formatEntries) {
-      const { raw: fmt, encryptedSig, sigParam, nValue } = entry;
-      let finalUrl = entry.url;
+        // Apply PO (Proof of Origin) token — required by the CDN to serve
+        // real content instead of preview stubs for many video types.
+        if (poToken) {
+          try {
+            const u = new URL(finalUrl);
+            u.searchParams.set('pot', poToken);
+            finalUrl = u.toString();
+          } catch {}
+        }
 
-      // Apply signature decryption if needed
-      if (encryptedSig) {
-        const spec = cache.sigSpecs[encryptedSig.length];
-        if (!spec) {
-          console.warn(`[${this.name}] No sig spec for length ${encryptedSig.length}, skipping itag=${fmt.itag}`);
+        // Parse format metadata
+        const mimeType = fmt.mimeType || '';
+        const hasVideo = mimeType.startsWith('video/');
+        const hasAudio = mimeType.startsWith('audio/') ||
+                         (hasVideo && /mp4a|opus|vorbis|aac/.test(mimeType));
+        const height = fmt.height || 0;
+        const width = fmt.width || 0;
+
+        let ext = 'mp4';
+        if (mimeType.includes('video/webm')) ext = 'webm';
+        else if (mimeType.includes('audio/mp4')) ext = 'm4a';
+        else if (mimeType.includes('audio/webm')) ext = 'webm';
+        else if (mimeType.includes('video/3gpp')) ext = '3gp';
+
+        let quality = fmt.qualityLabel || fmt.quality || 'unknown';
+        if (height > 0) {
+          quality = `${height}p`;
+          if (fmt.fps && fmt.fps > 30) quality += `${fmt.fps}`;
+        } else if (hasAudio && !hasVideo) {
+          if (fmt.averageBitrate) quality = `${Math.round(fmt.averageBitrate / 1000)}k`;
+          else if ((fmt.audioQuality || '').includes('MEDIUM')) quality = '128k';
+          else if ((fmt.audioQuality || '').includes('LOW')) quality = '50k';
+          else if ((fmt.audioQuality || '').includes('HIGH')) quality = '256k';
+          else quality = 'audio';
+        }
+
+        const codecsMatch = mimeType.match(/codecs="([^"]+)"/);
+        const codecParts = (codecsMatch ? codecsMatch[1] : '').split(',').map(c => c.trim());
+
+        candidateFormats.push({
+          quality,
+          url: finalUrl,
+          width,
+          height,
+          format_id: fmt.itag ? `${fmt.itag}` : quality,
+          ext,
+          protocol: 'https',
+          hasVideo,
+          hasAudio,
+          mimeType,
+          bitrate: fmt.bitrate || 0,
+          filesize: fmt.contentLength ? parseInt(fmt.contentLength) : null,
+          fps: fmt.fps || null,
+          vcodec: hasVideo ? (codecParts[0] || null) : null,
+          acodec: hasAudio ? (codecParts[hasVideo ? 1 : 0] || null) : null,
+          headers: formatDownloadHeaders
+        });
+      }
+
+      if (candidateFormats.length === 0) {
+        console.log(`[${this.name}] ${cName}: No formats survived processing, trying next client...`);
+        continue;
+      }
+
+      // Quick pre-probe: if the API reported contentLength for formats and
+      // we know the expected duration, check if the sizes make sense before
+      // doing an HTTP probe.  This avoids wasting time on clients that the
+      // API itself already reveals as serving preview/stub content.
+      if (expectedDuration > 30) {
+        const videoFmt = candidateFormats.find(f => f.hasVideo && f.filesize);
+        if (videoFmt && videoFmt.filesize > 0) {
+          const minExpected = expectedDuration * 1024; // ~1 KB/s minimum
+          if (videoFmt.filesize < minExpected) {
+            console.log(`[${this.name}] ${cName}: Video stream is only ${(videoFmt.filesize / 1024).toFixed(0)} KB for a ${Math.round(expectedDuration)}s video — preview/stub, skipping client`);
+            continue;
+          }
+        }
+      }
+
+      // Probe a processed URL to verify the CDN actually serves bytes.
+      // This catches clients like ANDROID_VR whose URLs look valid but
+      // return 0 bytes, as well as expired/blocked URLs.
+      const probeTarget = candidateFormats.find(f => f.url);
+      if (probeTarget) {
+        const probeOk = await this._probeFormatUrl(probeTarget.url, cConfig, { expectedDuration });
+        if (!probeOk) {
+          console.log(`[${this.name}] ${cName}: Post-processing URL probe failed \u2014 CDN rejected, trying next client...`);
           continue;
         }
-        finalUrl = this._applySignature(spec, encryptedSig, sigParam, finalUrl);
+        console.log(`[${this.name}] ${cName}: URL probe OK`);
       }
 
-      // Apply n-challenge result
-      if (nValue && cache?.nResults?.[nValue]) {
-        finalUrl = this._applyNChallenge(finalUrl, cache.nResults[nValue]);
+      formats = candidateFormats;
+      break;
+    }
+
+    // IOS client DASH/adaptive format URLs contain &c=IOS and the CDN
+    // enforces that only tiny Range requests (probe-size) succeed — larger
+    // bounded-Range or full-file downloads get 403.  The real iOS app uses
+    // HLS, not DASH.  So when IOS is the winning client and an HLS manifest
+    // is available, discard the DASH formats and jump straight to HLS
+    // (skip PAGE fallback which would only yield a low-quality combined format).
+    let forceHLS = false;
+    if (formats && formats.length > 0 && clientName === 'IOS' && hlsManifestUrl) {
+      console.log(`[${this.name}] IOS DASH formats have CDN restrictions — switching to HLS manifest`);
+      formats = null;
+      forceHLS = true;
+    }
+
+    // 9. Fallback: try formats from the page-embedded ytInitialPlayerResponse.
+    //    The page was fetched WITH cookies, so the embedded response reflects
+    //    the authenticated session — it may have full formats even when the
+    //    API clients (without SAPISIDHASH) returned only preview stubs.
+    if (!forceHLS && (!formats || formats.length === 0) && pagePlayerResponse?.streamingData) {
+      const sd = pagePlayerResponse.streamingData;
+      // Also check page-embedded HLS manifest
+      if (sd.hlsManifestUrl && !hlsManifestUrl) {
+        hlsManifestUrl = sd.hlsManifestUrl;
+        console.log(`[${this.name}] PAGE: HLS manifest available`);
+      }
+      const pageFormats = [...(sd.formats || []), ...(sd.adaptiveFormats || [])];
+      const withUrl = pageFormats.filter(f => f.url).length;
+      const withSigCipher = pageFormats.filter(f => f.signatureCipher).length;
+      // Extract PO token from page player response
+      const pagePoToken = pagePlayerResponse.serviceIntegrityDimensions?.poToken || null;
+      console.log(`[${this.name}] PAGE (embedded): ${pageFormats.length} formats (${withUrl} url, ${withSigCipher} signatureCipher)${pagePoToken ? ` [PO token: ${pagePoToken.length} chars]` : ''}`);
+
+
+      if (pageFormats.length > 0) {
+        // Process exactly like API formats: collect challenges, solve, build entries
+        const sigLengthsSet = new Set();
+        const nValuesSet = new Set();
+        const formatEntries = [];
+
+        for (const fmt of pageFormats) {
+          let fmtUrl = fmt.url || null;
+          let encryptedSig = null;
+          let sigParam = 'signature';
+
+          if (!fmtUrl && fmt.signatureCipher) {
+            const params = new URLSearchParams(fmt.signatureCipher);
+            fmtUrl = params.get('url');
+            encryptedSig = params.get('s');
+            sigParam = params.get('sp') || 'signature';
+            if (encryptedSig) sigLengthsSet.add(encryptedSig.length);
+          }
+          if (!fmtUrl) continue;
+
+          let nValue = null;
+          try {
+            nValue = new URL(fmtUrl).searchParams.get('n');
+            if (nValue) nValuesSet.add(nValue);
+          } catch {}
+
+          formatEntries.push({ raw: fmt, url: fmtUrl, encryptedSig, sigParam, nValue });
+        }
+
+        if (sigLengthsSet.size > 0 || nValuesSet.size > 0) {
+          await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+        }
+
+        const cache = this._playerCache.get(playerUrl);
+        const pageDownloadHeaders = {
+          ...DOWNLOAD_HEADERS,
+          // Page-embedded response is the WEB client
+          'User-Agent': DOWNLOAD_HEADERS['User-Agent']
+        };
+        if (this._cookieHeader) pageDownloadHeaders['Cookie'] = this._cookieHeader;
+
+        const pageCandidates = [];
+        for (const entry of formatEntries) {
+          const { raw: fmt, encryptedSig, sigParam, nValue } = entry;
+          let finalUrl = entry.url;
+
+          if (encryptedSig) {
+            const spec = cache.sigSpecs[encryptedSig.length];
+            if (!spec) continue;
+            finalUrl = this._applySignature(spec, encryptedSig, sigParam, finalUrl);
+          }
+          if (nValue && cache?.nResults?.[nValue]) {
+            finalUrl = this._applyNChallenge(finalUrl, cache.nResults[nValue]);
+          }
+
+          // Apply PO token from page response
+          if (pagePoToken) {
+            try {
+              const u = new URL(finalUrl);
+              u.searchParams.set('pot', pagePoToken);
+              finalUrl = u.toString();
+            } catch {}
+          }
+
+          const mimeType = fmt.mimeType || '';
+          const hasVideo = mimeType.startsWith('video/');
+          const hasAudio = mimeType.startsWith('audio/') ||
+                           (hasVideo && /mp4a|opus|vorbis|aac/.test(mimeType));
+          const height = fmt.height || 0;
+          const width = fmt.width || 0;
+
+          let ext = 'mp4';
+          if (mimeType.includes('video/webm')) ext = 'webm';
+          else if (mimeType.includes('audio/mp4')) ext = 'm4a';
+          else if (mimeType.includes('audio/webm')) ext = 'webm';
+          else if (mimeType.includes('video/3gpp')) ext = '3gp';
+
+          let quality = fmt.qualityLabel || fmt.quality || 'unknown';
+          if (height > 0) {
+            quality = `${height}p`;
+            if (fmt.fps && fmt.fps > 30) quality += `${fmt.fps}`;
+          } else if (hasAudio && !hasVideo) {
+            if (fmt.averageBitrate) quality = `${Math.round(fmt.averageBitrate / 1000)}k`;
+            else if ((fmt.audioQuality || '').includes('MEDIUM')) quality = '128k';
+            else if ((fmt.audioQuality || '').includes('LOW')) quality = '50k';
+            else if ((fmt.audioQuality || '').includes('HIGH')) quality = '256k';
+            else quality = 'audio';
+          }
+
+          const codecsMatch = mimeType.match(/codecs="([^"]+)"/);
+          const codecParts = (codecsMatch ? codecsMatch[1] : '').split(',').map(c => c.trim());
+
+          pageCandidates.push({
+            quality,
+            url: finalUrl,
+            width,
+            height,
+            format_id: fmt.itag ? `${fmt.itag}` : quality,
+            ext,
+            protocol: 'https',
+            hasVideo,
+            hasAudio,
+            mimeType,
+            bitrate: fmt.bitrate || 0,
+            filesize: fmt.contentLength ? parseInt(fmt.contentLength) : null,
+            fps: fmt.fps || null,
+            vcodec: hasVideo ? (codecParts[0] || null) : null,
+            acodec: hasAudio ? (codecParts[hasVideo ? 1 : 0] || null) : null,
+            headers: pageDownloadHeaders
+          });
+        }
+
+        if (pageCandidates.length > 0) {
+          // Same pre-probe and probe as API clients
+          let pageOk = true;
+          if (expectedDuration > 30) {
+            const videoFmt = pageCandidates.find(f => f.hasVideo && f.filesize);
+            if (videoFmt && videoFmt.filesize > 0) {
+              const minExpected = expectedDuration * 1024;
+              if (videoFmt.filesize < minExpected) {
+                console.log(`[${this.name}] PAGE: Video stream is only ${(videoFmt.filesize / 1024).toFixed(0)} KB for a ${Math.round(expectedDuration)}s video — preview/stub`);
+                pageOk = false;
+              }
+            }
+          }
+
+          if (pageOk) {
+            const webConfig = INNERTUBE_CLIENTS.find(c => c.name === 'WEB');
+            const probeTarget = pageCandidates.find(f => f.url);
+            if (probeTarget) {
+              const probeOk = await this._probeFormatUrl(probeTarget.url, webConfig, { expectedDuration });
+              if (probeOk) {
+                console.log(`[${this.name}] PAGE (embedded): URL probe OK — using page formats`);
+                formats = pageCandidates;
+                clientName = 'PAGE';
+              } else {
+                console.log(`[${this.name}] PAGE (embedded): URL probe failed`);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 10. Last resort: HLS manifest fallback.
+    //     Live streams/replays often have HLS manifests that serve real content
+    //     via segment URLs without PO tokens.  Use ffmpeg-based HLS download.
+    if ((!formats || formats.length === 0) && hlsManifestUrl) {
+      console.log(`[${this.name}] All direct-download clients exhausted — falling back to HLS manifest`);
+      console.log(`[${this.name}] HLS URL: ${hlsManifestUrl}`);
+
+      const hlsHeaders = { ...DOWNLOAD_HEADERS };
+      if (this._cookieHeader) hlsHeaders['Cookie'] = this._cookieHeader;
+
+      // Fetch and parse the master playlist to extract per-quality variants
+      try {
+        const hlsResp = await got(hlsManifestUrl, {
+          headers: hlsHeaders,
+          timeout: { request: 15000 },
+        });
+        const masterPlaylist = hlsResp.body;
+        const hlsFormats = this._parseHlsMasterPlaylist(masterPlaylist, hlsManifestUrl, hlsHeaders);
+
+        if (hlsFormats.length > 0) {
+          formats = hlsFormats;
+          console.log(`[${this.name}] HLS: parsed ${hlsFormats.length} variant(s) — ${hlsFormats.filter(f => f.hasVideo && !f.hasAudio).length} video-only, ${hlsFormats.filter(f => f.hasAudio && !f.hasVideo).length} audio-only, ${hlsFormats.filter(f => f.hasVideo && f.hasAudio).length} combined`);
+        } else {
+          // Parsing returned nothing useful — fall back to single "best" entry
+          console.log(`[${this.name}] HLS: could not parse variants, using master playlist as single format`);
+          formats = [{
+            quality: 'best',
+            url: hlsManifestUrl,
+            width: 0,
+            height: 0,
+            format_id: 'hls-manifest',
+            ext: 'm3u8',
+            protocol: 'hls',
+            hasVideo: true,
+            hasAudio: true,
+            mimeType: 'application/vnd.apple.mpegURL',
+            bitrate: 0,
+            filesize: null,
+            fps: null,
+            vcodec: null,
+            acodec: null,
+            headers: hlsHeaders
+          }];
+        }
+      } catch (e) {
+        console.log(`[${this.name}] HLS: failed to fetch master playlist (${e.message}), using URL directly`);
+        formats = [{
+          quality: 'best',
+          url: hlsManifestUrl,
+          width: 0,
+          height: 0,
+          format_id: 'hls-manifest',
+          ext: 'm3u8',
+          protocol: 'hls',
+          hasVideo: true,
+          hasAudio: true,
+          mimeType: 'application/vnd.apple.mpegURL',
+          bitrate: 0,
+          filesize: null,
+          fps: null,
+          vcodec: null,
+          acodec: null,
+          headers: hlsHeaders
+        }];
       }
 
-      // Parse format metadata
-      const mimeType = fmt.mimeType || '';
-      const hasVideo = mimeType.startsWith('video/');
-      const hasAudio = mimeType.startsWith('audio/') ||
-                       (hasVideo && /mp4a|opus|vorbis|aac/.test(mimeType));
-      const height = fmt.height || 0;
-      const width = fmt.width || 0;
+      clientName = 'HLS';
+    }
 
-      let ext = 'mp4';
-      if (mimeType.includes('video/webm')) ext = 'webm';
-      else if (mimeType.includes('audio/mp4')) ext = 'm4a';
-      else if (mimeType.includes('audio/webm')) ext = 'webm';
-      else if (mimeType.includes('video/3gpp')) ext = '3gp';
-
-      let quality = fmt.qualityLabel || fmt.quality || 'unknown';
-      if (height > 0) {
-        quality = `${height}p`;
-        if (fmt.fps && fmt.fps > 30) quality += `${fmt.fps}`;
-      } else if (hasAudio && !hasVideo) {
-        if (fmt.averageBitrate) quality = `${Math.round(fmt.averageBitrate / 1000)}k`;
-        else if ((fmt.audioQuality || '').includes('MEDIUM')) quality = '128k';
-        else if ((fmt.audioQuality || '').includes('LOW')) quality = '50k';
-        else if ((fmt.audioQuality || '').includes('HIGH')) quality = '256k';
-        else quality = 'audio';
-      }
-
-      const codecsMatch = mimeType.match(/codecs="([^"]+)"/);
-      const codecParts = (codecsMatch ? codecsMatch[1] : '').split(',').map(c => c.trim());
-
-      formats.push({
-        quality,
-        url: finalUrl,
-        width,
-        height,
-        format_id: fmt.itag ? `${fmt.itag}` : quality,
-        ext,
-        protocol: 'https',
-        hasVideo,
-        hasAudio,
-        mimeType,
-        bitrate: fmt.bitrate || 0,
-        filesize: fmt.contentLength ? parseInt(fmt.contentLength) : null,
-        fps: fmt.fps || null,
-        vcodec: hasVideo ? (codecParts[0] || null) : null,
-        acodec: hasAudio ? (codecParts[hasVideo ? 1 : 0] || null) : null,
-        headers: formatDownloadHeaders
-      });
+    if (!formats || formats.length === 0) {
+      throw new Error('No InnerTube client returned downloadable formats (all clients exhausted)');
     }
 
     // Sort: combined video+audio first, then by height, then bitrate
@@ -636,10 +1335,6 @@ export class YouTubeExtractor extends BaseExtractor {
     });
 
     console.log(`[${this.name}] Extracted ${formats.length} format(s) via ${clientName}`);
-
-    if (formats.length === 0) {
-      throw new Error('No downloadable formats found after processing');
-    }
 
     const combined = formats.filter(f => f.hasVideo && f.hasAudio);
     const videoOnly = formats.filter(f => f.hasVideo && !f.hasAudio);
@@ -664,7 +1359,7 @@ export class YouTubeExtractor extends BaseExtractor {
       console.log(`[${this.name}] Subtitle extraction failed: ${e.message}`);
     }
 
-    const videoDetails = pagePlayerResponse?.videoDetails || {};
+    const videoDetails2 = pagePlayerResponse?.videoDetails || {};
 
     return {
       title,
@@ -672,10 +1367,10 @@ export class YouTubeExtractor extends BaseExtractor {
       extractor: this.name,
       url,
       videoId,
-      duration: videoDetails.lengthSeconds ? parseInt(videoDetails.lengthSeconds) : null,
-      description: videoDetails.shortDescription || null,
-      uploader: videoDetails.author || null,
-      thumbnail: videoDetails.thumbnail?.thumbnails?.at(-1)?.url || null,
+      duration: videoDetails2.lengthSeconds ? parseInt(videoDetails2.lengthSeconds) : null,
+      description: videoDetails2.shortDescription || null,
+      uploader: videoDetails2.author || null,
+      thumbnail: videoDetails2.thumbnail?.thumbnails?.at(-1)?.url || null,
       subtitles: subtitles || null,
       translationLanguages: translationLanguages || null
     };

@@ -62,6 +62,14 @@ if [ "$MAJOR" -lt 18 ]; then
     error "Node.js 18+ required (found $NODE_VERSION)"
 fi
 
+# --- Clean (before downloads so we don't delete the freshly fetched node) ----
+
+if [ "$CLEAN" = true ] && [ -d "$DIST_DIR" ]; then
+    step 'Cleaning dist/'
+    rm -rf "${DIST_DIR:?}"/*
+    echo '  dist/ cleaned'
+fi
+
 # --- Check SEA sentinel in Node.js binary ------------------------------------
 # Distribution-packaged Node.js (RHEL, Fedora, Debian, etc.) often strips the
 # SEA sentinel fuse from the binary, making postject injection impossible.
@@ -114,14 +122,6 @@ if ! grep -q "$SEA_SENTINEL" "$NODE_BIN" 2>/dev/null; then
     else
         echo "  Using cached $OFFICIAL_NODE"
     fi
-fi
-
-# --- Clean -------------------------------------------------------------------
-
-if [ "$CLEAN" = true ] && [ -d "$DIST_DIR" ]; then
-    step 'Cleaning dist/'
-    rm -rf "${DIST_DIR:?}"/*
-    echo '  dist/ cleaned'
 fi
 
 # --- Install dependencies ----------------------------------------------------

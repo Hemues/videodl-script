@@ -281,6 +281,18 @@ export class VideoDownloader extends EventEmitter {
 
       console.log(`  Video: ${(vSize / 1024 / 1024).toFixed(2)} MB  Audio: ${(aSize / 1024 / 1024).toFixed(2)} MB`);
 
+      // Validate that both streams actually have data before proceeding
+      if (vSize === 0 || aSize === 0) {
+        const failed = [];
+        if (vSize === 0) failed.push('video');
+        if (aSize === 0) failed.push('audio');
+        throw new Error(
+          `Download failed: ${failed.join(' and ')} stream(s) returned 0 bytes. ` +
+          'The format URLs may have expired or the YouTube client returned unusable streams. ' +
+          'Try again or use a different format (e.g., --format best).'
+        );
+      }
+
       // Phase 1b: Download subtitles if requested
       if (options.subtitles && options.subtitles.length > 0) {
         this.emit('merge-phase', { phase: 'subtitles', label: `Downloading ${options.subtitles.length} subtitle track(s)...` });
@@ -416,11 +428,22 @@ export class VideoDownloader extends EventEmitter {
       timeout: { lookup: 10000, connect: 10000, secureConnect: 10000, response: 30000 }
     };
 
+    // Always use Range header for the initial request.  Some CDNs (e.g.
+    // YouTube IOS client URLs) reject plain GET with 403 while accepting
+    // Range-based requests.  `Range: bytes=0-` requests the full file but
+    // signals Range capability, which is safe for virtually all HTTP servers
+    // (they return 206 with the complete body, or 200 if Range is ignored).
+    const initialHeaders = { ...headers };
+    if (!initialHeaders['Range']) {
+      initialHeaders['Range'] = 'bytes=0-';
+    }
+
     // ── Phase 1: Start direct download with speed monitoring ──
     let totalSize = 0;
     let downloaded = 0;
     let throttleDetected = false;
     let rangeSupported = false;
+    let serverRejected = false;   // CDN returned 403 — needs bounded-Range retry
 
     // Speed tracking
     let peakSpeed = 0;
@@ -431,107 +454,199 @@ export class VideoDownloader extends EventEmitter {
 
     const fileStream = fs.createWriteStream(filepath);
 
-    await new Promise((resolve, reject) => {
-      let resolved = false;
-      const done = (err) => {
-        if (resolved) return;
-        resolved = true;
-        // Wait for fileStream to fully flush to disk before resolving.
-        // Without this, the merge step can start reading an incomplete file
-        // (on fast CDNs the source delivers data faster than disk writes,
-        //  so Node.js buffers significant amounts internally).
-        fileStream.end(() => {
-          if (err && !throttleDetected) reject(err);
-          else resolve();
-        });
-      };
+    try {
+      await new Promise((resolve, reject) => {
+        let resolved = false;
+        let httpError = null; // Track HTTP-level errors
 
-      const stream = got.stream(url, { ...reqBase, headers });
+        const done = (err) => {
+          if (resolved) return;
+          resolved = true;
+          const finalErr = err || httpError;
+          // Wait for fileStream to fully flush to disk before resolving.
+          // Without this, the merge step can start reading an incomplete file
+          // (on fast CDNs the source delivers data faster than disk writes,
+          //  so Node.js buffers significant amounts internally).
+          fileStream.end(() => {
+            if (finalErr && !throttleDetected) reject(finalErr);
+            else resolve();
+          });
+        };
 
-      stream.on('response', (resp) => {
-        totalSize = parseInt(resp.headers['content-length'] || '0');
-        const acceptRanges = resp.headers['accept-ranges'];
-        if (acceptRanges && acceptRanges !== 'none') rangeSupported = true;
-        downloadStartTime = Date.now();
-        lastCheckTime = downloadStartTime;
-      });
+        const stream = got.stream(url, { ...reqBase, headers: initialHeaders });
 
-      stream.on('data', (chunk) => {
-        downloaded += chunk.length;
-        fileStream.write(chunk);
-        if (onProgress) onProgress(downloaded, totalSize);
+        stream.on('response', (resp) => {
+          totalSize = parseInt(resp.headers['content-length'] || '0');
+          const acceptRanges = resp.headers['accept-ranges'];
+          if (acceptRanges && acceptRanges !== 'none') rangeSupported = true;
 
-        const now = Date.now();
-        if (!downloadStartTime) downloadStartTime = now; // Safeguard: track from first data
-
-        // During probe phase: track peak speed
-        if (probePhase) {
-          if (downloaded >= PROBE_BYTES) {
-            const elapsed = now - downloadStartTime;
-            if (elapsed > 0) {
-              peakSpeed = (downloaded / elapsed) * 1000;
-            }
-            probePhase = false;
-            lastCheckTime = now;
-            lastCheckBytes = downloaded;
-          } else if (totalSize >= MIN_FILE_SIZE && (now - downloadStartTime) > 5000) {
-            // Probe taking >5 seconds for 1 MB = already throttled from the start
-            // Check if we have Range support to switch to chunked
-            const probeSpeed = downloaded / ((now - downloadStartTime) / 1000);
-            if (probeSpeed < 500_000) { // < 500 KB/s during probe = almost certainly throttled
-              peakSpeed = 999_999_999; // Fake high peak so ratio check works on resume
-              throttleDetected = true;
-              stream.destroy();
-              done();
-              return;
+          // 206 Partial Content confirms Range support.  Also extract the
+          // definitive total size from Content-Range (more reliable than
+          // Content-Length which is the *range* size in 206 responses).
+          if (resp.statusCode === 206) {
+            rangeSupported = true;
+            const cr = resp.headers['content-range']; // e.g. "bytes 0-123456/123457"
+            if (cr) {
+              const m = cr.match(/\/(\d+)/);
+              if (m) totalSize = parseInt(m[1]);
             }
           }
-          return;
-        }
 
-        // Post-probe: check speed every ~1 second
-        const sinceLast = now - lastCheckTime;
-        if (sinceLast >= 1000 && totalSize >= MIN_FILE_SIZE) {
-          const recentBytes = downloaded - lastCheckBytes;
-          const currentSpeed = (recentBytes / sinceLast) * 1000;
+          downloadStartTime = Date.now();
+          lastCheckTime = downloadStartTime;
 
-          // Update peak if somehow speed recovered
-          if (currentSpeed > peakSpeed) peakSpeed = currentSpeed;
+          // Detect non-2xx responses early — the stream will still emit data/end
+          // events for the error body, but we flag it so we can reject later.
+          if (resp.statusCode >= 400) {
+            httpError = new Error(`HTTP ${resp.statusCode} ${resp.statusMessage || ''} — server rejected the download request`.trim());
+          }
+        });
 
-          // Detection 1: Current speed dropped well below peak (burst→crawl pattern)
-          if (peakSpeed > MIN_PEAK_SPEED && currentSpeed < peakSpeed * THROTTLE_RATIO) {
-            throttleDetected = true;
-            stream.destroy();
-            done();
+        stream.on('data', (chunk) => {
+          downloaded += chunk.length;
+          fileStream.write(chunk);
+          if (onProgress) onProgress(downloaded, totalSize);
+
+          const now = Date.now();
+          if (!downloadStartTime) downloadStartTime = now; // Safeguard: track from first data
+
+          // During probe phase: track peak speed
+          if (probePhase) {
+            if (downloaded >= PROBE_BYTES) {
+              const elapsed = now - downloadStartTime;
+              if (elapsed > 0) {
+                peakSpeed = (downloaded / elapsed) * 1000;
+              }
+              probePhase = false;
+              lastCheckTime = now;
+              lastCheckBytes = downloaded;
+            } else if (totalSize >= MIN_FILE_SIZE && (now - downloadStartTime) > 5000) {
+              // Probe taking >5 seconds for 1 MB = already throttled from the start
+              // Check if we have Range support to switch to chunked
+              const probeSpeed = downloaded / ((now - downloadStartTime) / 1000);
+              if (probeSpeed < 500_000) { // < 500 KB/s during probe = almost certainly throttled
+                peakSpeed = 999_999_999; // Fake high peak so ratio check works on resume
+                throttleDetected = true;
+                stream.destroy();
+                done();
+                return;
+              }
+            }
             return;
           }
 
-          // Detection 2: Absolute minimum speed (throttled from the start, no burst)
-          // If we've been downloading for 5+ seconds and overall average is < 2 MB/s
-          const overallElapsed = now - downloadStartTime;
-          if (overallElapsed > 5000) {
-            const overallSpeed = (downloaded / overallElapsed) * 1000;
-            if (overallSpeed < MIN_PEAK_SPEED) {
+          // Post-probe: check speed every ~1 second
+          const sinceLast = now - lastCheckTime;
+          if (sinceLast >= 1000 && totalSize >= MIN_FILE_SIZE) {
+            const recentBytes = downloaded - lastCheckBytes;
+            const currentSpeed = (recentBytes / sinceLast) * 1000;
+
+            // Update peak if somehow speed recovered
+            if (currentSpeed > peakSpeed) peakSpeed = currentSpeed;
+
+            // Detection 1: Current speed dropped well below peak (burst→crawl pattern)
+            if (peakSpeed > MIN_PEAK_SPEED && currentSpeed < peakSpeed * THROTTLE_RATIO) {
               throttleDetected = true;
               stream.destroy();
               done();
               return;
             }
+
+            // Detection 2: Absolute minimum speed (throttled from the start, no burst)
+            // If we've been downloading for 5+ seconds and overall average is < 2 MB/s
+            const overallElapsed = now - downloadStartTime;
+            if (overallElapsed > 5000) {
+              const overallSpeed = (downloaded / overallElapsed) * 1000;
+              if (overallSpeed < MIN_PEAK_SPEED) {
+                throttleDetected = true;
+                stream.destroy();
+                done();
+                return;
+              }
+            }
+
+            lastCheckTime = now;
+            lastCheckBytes = downloaded;
           }
+        });
 
-          lastCheckTime = now;
-          lastCheckBytes = downloaded;
-        }
+        stream.on('end', () => done());
+        stream.on('error', (err) => done(err));
+        // 'close' as safety-net only — 'end' or 'error' should fire first.
+        // Using a short delay avoids a race where 'close' resolves before
+        // 'error' has a chance to fire.
+        stream.on('close', () => setTimeout(() => done(), 50));
       });
+    } catch (err) {
+      // Some CDNs (e.g. YouTube IOS client URLs) require explicit bounded
+      // Range headers and reject open-ended Range or plain GET with 403.
+      // Catch this so we can retry with bounded-Range chunks below.
+      const is403 = /\b403\b/.test(err.message || '')
+                  || (err.response && err.response.statusCode === 403);
+      if (is403) {
+        serverRejected = true;
+        try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {}
+      } else {
+        throw err;
+      }
+    }
 
-      stream.on('end', () => done());
-      stream.on('error', (err) => done(err));
-      stream.on('close', () => done());
-    });
+    // ── CDN rejected the request (403) — retry with bounded-Range chunks ──
+    // YouTube IOS client URLs only accept bounded Range requests like the
+    // real iOS app sends (e.g. bytes=0-10485759), not open-ended or no Range.
+    if (serverRejected) {
+      let probeTotal = 0;
+      try {
+        const probe = await got(url, {
+          ...reqBase,
+          headers: { ...headers, 'Range': 'bytes=0-0' },
+          responseType: 'buffer',
+          throwHttpErrors: false
+        });
+        if (probe.statusCode === 206) {
+          const cr = probe.headers['content-range'];
+          if (cr) { const m = cr.match(/\/(\d+)/); if (m) probeTotal = parseInt(m[1]); }
+        }
+      } catch {}
+
+      if (!probeTotal) {
+        throw new Error('HTTP 403 — server rejected the download and bounded-Range probe also failed');
+      }
+
+      const numChunks = Math.ceil(probeTotal / CHUNK_SIZE);
+      console.log(`[download] Server rejected initial request (403) → downloading ${(probeTotal / 1048576).toFixed(1)} MB in ${numChunks} bounded-Range chunk(s)`);
+
+      let chunked = 0;
+      while (chunked < probeTotal) {
+        const end = Math.min(chunked + CHUNK_SIZE - 1, probeTotal - 1);
+        const chunkHeaders = { ...headers, 'Range': `bytes=${chunked}-${end}` };
+
+        const chunkStream = got.stream(url, { ...reqBase, headers: chunkHeaders });
+        const appendStream = fs.createWriteStream(filepath, { flags: chunked === 0 ? 'w' : 'a' });
+
+        const base = chunked;
+        chunkStream.on('downloadProgress', progress => {
+          if (onProgress) onProgress(base + progress.transferred, probeTotal);
+        });
+
+        await pipeline(chunkStream, appendStream);
+        chunked = base + (end - base + 1);
+      }
+
+      const finalSize = fs.statSync(filepath).size;
+      if (finalSize === 0) {
+        throw new Error('Chunked download produced 0 bytes');
+      }
+      return finalSize;
+    }
 
     // ── If no throttling → done (direct download completed) ──
     if (!throttleDetected) {
-      return downloaded || (fs.existsSync(filepath) ? fs.statSync(filepath).size : 0);
+      const finalSize = downloaded || (fs.existsSync(filepath) ? fs.statSync(filepath).size : 0);
+      if (finalSize === 0) {
+        throw new Error('Download returned 0 bytes — the server sent an empty response (URL may have expired or the format is unavailable)');
+      }
+      return finalSize;
     }
 
     // ── Phase 2: Throttling detected — probe Range support and resume with chunks ──
@@ -1022,12 +1137,18 @@ export class VideoDownloader extends EventEmitter {
         args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto');
       }
 
-      args.push(
-        '-i', hlsUrl,  // Use the resolved HLS URL instead of options.url
-        '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        '-y', filepath
-      );
+      // HLS pair: two separate inputs (video + audio variant playlists)
+      if (options.hlsAudioUrl) {
+        args.push('-i', hlsUrl);  // input 0: video-only variant
+        // Audio input needs the same headers/cookies — they were added above -i
+        args.push('-i', options.hlsAudioUrl);  // input 1: audio-only variant
+        args.push('-map', '0:v', '-map', '1:a');
+        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+      } else {
+        args.push('-i', hlsUrl);
+        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+      }
+      args.push('-y', filepath);
 
       console.log(`[HLS] ffmpeg command: ${ffmpegPath} ${args.join(' ')}`);
       console.log(`[HLS] Using URL: ${hlsUrl.substring(0, 100)}...`);
@@ -1103,9 +1224,15 @@ export class VideoDownloader extends EventEmitter {
               console.log(`[HLS] Warning: subtitle embedding failed: ${subErr.message}`);
             }
           }
-          const stats = fs.statSync(filepath);
-          this.emit('complete', { filepath, size: stats.size });
-          resolve(filepath);
+          // After subtitle embedding the file may have changed to .mkv
+          let finalPath = filepath;
+          const mkvPath = filepath.replace(/\.[^.]+$/, '.mkv');
+          if (!fs.existsSync(finalPath) && fs.existsSync(mkvPath)) {
+            finalPath = mkvPath;
+          }
+          const stats = fs.statSync(finalPath);
+          this.emit('complete', { filepath: finalPath, size: stats.size });
+          resolve(finalPath);
         } else {
           // Log last part of stderr for debugging
           const errorLines = stderrOutput.split('\n').slice(-10).join('\n');
@@ -1144,6 +1271,15 @@ export class VideoDownloader extends EventEmitter {
     const tmpOutput = videoPath + '.tmp_with_subs.mp4';
     console.log(`[HLS] Embedding ${subTmpPaths.length} subtitle(s) into output...`);
 
+    // Determine subtitle codec based on output container
+    const ext = path.extname(videoPath).toLowerCase();
+    let subCodec;
+    if (ext === '.mkv' || ext === '.webm') {
+      subCodec = 'webvtt';
+    } else {
+      subCodec = 'mov_text';
+    }
+
     try {
       await new Promise((resolve, reject) => {
         const args = [
@@ -1157,16 +1293,11 @@ export class VideoDownloader extends EventEmitter {
 
         args.push('-c:v', 'copy', '-c:a', 'copy');
 
-        // Determine subtitle codec based on output container
-        const ext = path.extname(videoPath).toLowerCase();
-        if (ext === '.mkv' || ext === '.webm') {
-          args.push('-c:s', 'webvtt');
-        } else {
-          args.push('-c:s', 'mov_text');
-        }
+        args.push('-c:s', subCodec);
 
         // Map: video+audio from input 0, subs from inputs 1+
-        args.push('-map', '0:v', '-map', '0:a');
+        // Use '?' suffix so ffmpeg doesn't fail if stream is absent (e.g. video-only HLS)
+        args.push('-map', '0:v', '-map', '0:a?');
         for (let i = 0; i < subTmpPaths.length; i++) {
           args.push('-map', `${i + 1}:0`);
         }
@@ -1202,7 +1333,56 @@ export class VideoDownloader extends EventEmitter {
     } catch (e) {
       // Clean up temp output on failure
       try { if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput); } catch {}
-      throw e;
+
+      // If mov_text encoder failed, try with srt (more widely available)
+      if (/mov_text|encoder/i.test(e.message) && subCodec === 'mov_text') {
+        console.log(`[HLS] mov_text not available, retrying with srt codec...`);
+        try {
+          await new Promise((resolve, reject) => {
+            const retryArgs = [
+              '-loglevel', 'warning',
+              '-i', videoPath,
+            ];
+            for (const sub of subTmpPaths) retryArgs.push('-i', sub.path);
+            retryArgs.push('-c:v', 'copy', '-c:a', 'copy', '-c:s', 'srt');
+            retryArgs.push('-map', '0:v', '-map', '0:a?');
+            for (let i = 0; i < subTmpPaths.length; i++) retryArgs.push('-map', `${i + 1}:0`);
+            for (let i = 0; i < subTmpPaths.length; i++) {
+              retryArgs.push(`-metadata:s:s:${i}`, `language=${subTmpPaths[i].lang}`);
+              if (subTmpPaths[i].name) retryArgs.push(`-metadata:s:s:${i}`, `title=${subTmpPaths[i].name}`);
+            }
+            // srt in mp4 may not work; try mkv container
+            const mkvOutput = videoPath.replace(/\.[^.]+$/, '.mkv');
+            retryArgs.push('-y', mkvOutput);
+            const ff = spawn(ffmpegPath, retryArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+            let stderr = '';
+            ff.stderr.on('data', d => { stderr += d.toString(); });
+            ff.on('error', e2 => reject(e2));
+            ff.on('close', code => {
+              if (code === 0) {
+                // MKV created successfully — remove the original mp4
+                try { fs.unlinkSync(videoPath); } catch {}
+                console.log(`[HLS] Subtitles embedded into .mkv container`);
+                resolve();
+              } else {
+                reject(new Error(`srt fallback also failed (code ${code})`));
+              }
+            });
+          });
+        } catch (e2) {
+          // Both embed methods failed — save subtitles as sidecar files
+          console.log(`[HLS] Subtitle embedding not supported by this ffmpeg — saving as sidecar file(s)`);
+          for (const sub of subTmpPaths) {
+            const sidecarPath = videoPath.replace(/\.[^.]+$/, `.${sub.lang}.vtt`);
+            try {
+              fs.copyFileSync(sub.path, sidecarPath);
+              console.log(`  Saved: ${path.basename(sidecarPath)}`);
+            } catch {}
+          }
+        }
+      } else {
+        throw e;
+      }
     } finally {
       // Clean up subtitle temp files
       for (const sub of subTmpPaths) {
