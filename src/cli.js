@@ -209,9 +209,18 @@ program
         const extractor = (await import('./extractors/index.js')).getExtractor(url);
         formatPair = extractor.selectFormatPair(videoInfo.formats, options.format);
         if (formatPair) {
+          const isHlsPair = formatPair.video.protocol === 'hls' && formatPair.audio.protocol === 'hls';
           const vInfo = `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim();
           const aInfo = `${formatPair.audio.quality} ${formatPair.audio.acodec || ''}`.trim();
-          console.log(chalk.cyan(`⚡ DASH merge: ${vInfo} + ${aInfo} → .${formatPair.ext}`));
+          if (isHlsPair) {
+            console.log(chalk.cyan(`⚡ HLS merge: ${vInfo} + ${aInfo} → .mp4`));
+            // Stash both variant URLs so ffmpeg can open them as two separate -i inputs.
+            // This avoids writing a local m3u8 file (which breaks ffmpeg's -headers option).
+            formatPair._hlsVideoUrl = formatPair.video.url;
+            formatPair._hlsAudioUrl = formatPair.audio.url;
+          } else {
+            console.log(chalk.cyan(`⚡ DASH merge: ${vInfo} + ${aInfo} → .${formatPair.ext}`));
+          }
           selectedFormat = formatPair.video; // for filename building
         } else {
           selectedFormat = extractor.selectFormat(videoInfo.formats, options.format);
@@ -327,7 +336,10 @@ program
         filename = options.output;
       } else {
         const baseName = sanitizeFilename(videoInfo.title);
-        const ext = formatPair ? formatPair.ext : (selectedFormat.ext || 'mp4');
+        // HLS pair → always mp4 (ffmpeg output), otherwise use formatPair or selectedFormat ext
+        const ext = (formatPair && formatPair._hlsVideoUrl) ? 'mp4'
+          : formatPair ? formatPair.ext
+          : (selectedFormat.ext || 'mp4');
         // Add domain by default (baseUrl defaults to true)
         if (options.baseUrl !== false) {
           const domain = extractBaseDomain(url);
@@ -388,7 +400,57 @@ program
       }
 
       // Use DASH merge for video-only+audio-only pairs, HLS for m3u8, regular for direct
-      if (formatPair) {
+      if (formatPair && formatPair._hlsVideoUrl) {
+        // HLS pair: pass video + audio variant URLs as separate ffmpeg inputs
+        downloadOptions.url = formatPair._hlsVideoUrl;
+        downloadOptions.hlsAudioUrl = formatPair._hlsAudioUrl;
+        downloadOptions.formatHeaders = formatPair.video.headers;
+
+        // Resolve subtitle downloads (same logic as DASH branch)
+        const wantSubs = options.subtitle !== false;
+        let subtitleDownloads = [];
+        if (wantSubs && videoInfo.subtitles && Object.keys(videoInfo.subtitles).length > 0) {
+          const subs = videoInfo.subtitles;
+          const requestedLang = options.subLang || null;
+          const translateLang = options.subTranslate || null;
+
+          if (translateLang) {
+            const firstTrack = Object.values(subs)[0];
+            if (firstTrack.isTranslatable) {
+              const transUrl = firstTrack.formats.vtt + '&tlang=' + translateLang;
+              subtitleDownloads.push({ url: transUrl, lang: translateLang, name: `${translateLang} (auto-translated)` });
+              console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${translateLang} (auto-translated from ${firstTrack.lang})`));
+            }
+          } else if (requestedLang === 'all') {
+            for (const [lang, sub] of Object.entries(subs)) {
+              subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
+            }
+            console.log(chalk.cyan(`\uD83D\uDCDD Subtitles: ${subtitleDownloads.map(s => s.lang).join(', ')}`));
+          } else if (requestedLang && subs[requestedLang]) {
+            const sub = subs[requestedLang];
+            subtitleDownloads.push({ url: sub.formats.vtt, lang: requestedLang, name: sub.name });
+            console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${requestedLang} - ${sub.name}`));
+          } else if (requestedLang && !subs[requestedLang]) {
+            const firstTrack = Object.values(subs)[0];
+            if (firstTrack.isTranslatable) {
+              const transUrl = firstTrack.formats.vtt + '&tlang=' + requestedLang;
+              subtitleDownloads.push({ url: transUrl, lang: requestedLang, name: `${requestedLang} (auto-translated)` });
+              console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${requestedLang} (auto-translated)`));
+            } else {
+              console.log(chalk.yellow(`\u26A0 Subtitle language '${requestedLang}' not available`));
+            }
+          } else {
+            const [lang, sub] = Object.entries(subs)[0];
+            subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
+            console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${lang} - ${sub.name}`));
+          }
+        }
+        if (subtitleDownloads.length > 0) {
+          downloadOptions.subtitles = subtitleDownloads;
+        }
+
+        await downloader.downloadHLS(downloadOptions);
+      } else if (formatPair) {
         // Resolve subtitle downloads for DASH merge
         // Subtitles are included by default when available; --no-subtitle opts out
         const wantSubs = options.subtitle !== false;
@@ -1543,6 +1605,12 @@ program
       process.exit(1);
     }
   });
+
+// Strip Node.js runtime flags that Commander doesn't understand.
+// The SEA binary wrapper prints a warning suggesting --trace-warnings which
+// users naturally try to pass, but it's a Node.js flag, not a CLI option.
+const NODE_FLAGS = ['--trace-warnings', '--trace-deprecation', '--pending-deprecation'];
+process.argv = process.argv.filter(a => !NODE_FLAGS.includes(a));
 
 // If the first non-option argument looks like a URL (no known subcommand),
 // treat it as a shorthand for "download <url>" so users can just run:
