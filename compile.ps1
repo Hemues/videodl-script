@@ -4,7 +4,9 @@
 
 .DESCRIPTION
     Builds videodl into standalone executables using esbuild + Node.js SEA.
-    Output is placed in the dist/ directory.
+    Produces two binary variants:
+      videodl.exe / videodl-linux               - downloads ffmpeg on first use
+      videodl-ffmpeg.exe / videodl-ffmpeg-linux  - ffmpeg embedded inside (fully standalone)
 
 .PARAMETER Linux
     Also cross-compile a Linux binary. Downloads the Linux Node.js binary
@@ -16,19 +18,23 @@
 .PARAMETER Clean
     Remove all files in dist/ before building.
 
+.PARAMETER NoFFmpeg
+    Skip embedding ffmpeg (only produce the plain binary).
+
 .EXAMPLE
-    .\compile.ps1                  # Build Windows binary only
-    .\compile.ps1 -Linux           # Build Windows + Linux binaries
+    .\compile.ps1                  # Build both variants
+    .\compile.ps1 -Linux           # Build both + cross-compile for Linux
     .\compile.ps1 -BundleOnly      # CJS bundle only (no binary)
-    .\compile.ps1 -Clean           # Clean dist/ then build Windows binary
-    .\compile.ps1 -Clean -Linux    # Clean dist/ then build Windows + Linux
+    .\compile.ps1 -Clean           # Clean dist/ then build
+    .\compile.ps1 -NoFFmpeg        # Plain binary only (no ffmpeg variant)
 #>
 
 [CmdletBinding()]
 param(
     [switch]$Linux,
     [switch]$BundleOnly,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$NoFFmpeg
 )
 
 Set-StrictMode -Version Latest
@@ -107,6 +113,13 @@ if (-not (Test-Path $nodeModules)) {
 
 Push-Location $ProjectRoot
 try {
+    # Build flags: always produce both variants unless -NoFFmpeg
+    $buildFlags = @('--package')
+    if ($NoFFmpeg) {
+        $buildFlags += '--no-ffmpeg'
+    }
+    $extraArgs = $buildFlags -join ' '
+
     if ($BundleOnly) {
         Write-Step 'Building CJS bundle only'
         node build.mjs --bundle-only
@@ -114,7 +127,7 @@ try {
     elseif ($Linux) {
         # Build Windows binary first
         Write-Step 'Building Windows binary'
-        node build.mjs
+        node build.mjs $extraArgs
 
         # Download Linux Node.js binary if not present
         $linuxNode = Join-Path $DistDir 'node-linux'
@@ -143,11 +156,11 @@ try {
 
         # Cross-compile Linux binary
         Write-Step 'Cross-compiling Linux binary'
-        node build.mjs --linux-inject
+        node build.mjs --linux-inject $extraArgs
     }
     else {
         Write-Step 'Building Windows binary'
-        node build.mjs
+        node build.mjs $extraArgs
     }
 }
 finally {
@@ -159,13 +172,15 @@ finally {
 Write-Step 'Build complete'
 
 if (Test-Path $DistDir) {
-    Get-ChildItem $DistDir -File | ForEach-Object {
+    Get-ChildItem $DistDir -File | Where-Object {
+        $_.Name -notmatch '\.(cjs|blob|json)$' -and $_.Name -ne 'node-official' -and $_.Name -ne 'node-linux'
+    } | ForEach-Object {
         if ($_.Length -gt 1MB) {
             $size = '{0:N1} MB' -f ($_.Length / 1MB)
         } else {
             $size = '{0:N0} KB' -f ($_.Length / 1KB)
         }
-        Write-Host ('  {0,-30} {1}' -f $_.Name, $size)
+        Write-Host ('  {0,-35} {1}' -f $_.Name, $size)
     }
 }
 

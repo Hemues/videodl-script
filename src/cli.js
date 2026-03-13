@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import ProgressBar from 'progress';
 import path from 'node:path';
 import fs from 'node:fs';
-import { VideoDownloader } from './downloader.js';
+import { VideoDownloader, uniqueFilepath } from './downloader.js';
 import { VideoConverter } from './converter.js';
 import { extractVideoInfo, listSupportedSites, listExtractors, getExtractor } from './extractors/index.js';
 import { parseCookieFile, buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
@@ -358,7 +358,7 @@ program
         try {
           const result = await cfProtectedDownload({
             url: cfFormat.url || selectedFormat.url,
-            filepath: path.join(options.directory || './downloads', filename),
+            filepath: uniqueFilepath(path.join(options.directory || './downloads', filename)),
             headers: cfFormat.headers || {},
             timeout: 600000, // 10 min for large videos
             onStatus: s => console.log(chalk.gray(`  ${s}`)),
@@ -1095,7 +1095,7 @@ program
         try {
           const result = await cfProtectedDownload({
             url: cfFormat.url || selectedFormat.url,
-            filepath: path.join(options.directory || './downloads', filename),
+            filepath: uniqueFilepath(path.join(options.directory || './downloads', filename)),
             headers: cfFormat.headers || {},
             timeout: 600000,
             onProgress: (downloaded, total) => {

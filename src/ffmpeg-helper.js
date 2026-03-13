@@ -34,16 +34,22 @@ export function checkFFmpegInPath() {
  * @returns {string}
  */
 export function getFFmpegPath() {
-  // Check if in PATH first
+  const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  
+  // Check next to the executable (bundled with compiled binary)
+  const exeDir = path.dirname(process.execPath);
+  const bundledPath = path.join(exeDir, exeName);
+  if (fs.existsSync(bundledPath)) {
+    return bundledPath;
+  }
+  
+  // Check if in PATH
   if (checkFFmpegInPath()) {
     return 'ffmpeg';
   }
   
-  // Check local installation
-  const platform = process.platform;
-  const exeName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  // Check local installation (~/.videodl-cli/ffmpeg/bin/)
   const localPath = path.join(FFMPEG_DIR, 'bin', exeName);
-  
   if (fs.existsSync(localPath)) {
     return localPath;
   }
@@ -97,14 +103,14 @@ export async function downloadFFmpeg(progressCallback = () => {}) {
     headers: { 'User-Agent': 'videodl-cli' }
   }).json();
   
-  // Find the appropriate asset - prefer static builds
+  // Find the appropriate asset - prefer static builds (BtbN names them without 'shared' suffix)
   let asset = releaseResponse.assets.find(a => 
     a.name.includes(buildType) &&
-    a.name.toLowerCase().includes('static') &&
+    !a.name.toLowerCase().includes('shared') &&
     (a.name.endsWith('.tar.xz') || a.name.endsWith('.zip'))
   );
   
-  // Fallback to non-static if static not available
+  // Fallback to shared if static not available
   if (!asset) {
     asset = releaseResponse.assets.find(a => 
       a.name.includes(buildType) && 
@@ -162,15 +168,17 @@ export async function downloadFFmpeg(progressCallback = () => {}) {
     throw new Error('FFmpeg binary not found in bin directory');
   }
   
-  // Copy entire bin directory to standard location
+  // Copy entire bin directory to standard location (if not already there)
   const targetDir = path.join(FFMPEG_DIR, 'bin');
-  if (fs.existsSync(targetDir)) {
-    // Clean old installation
-    fs.rmSync(targetDir, { recursive: true, force: true });
+  if (path.resolve(binDir) !== path.resolve(targetDir)) {
+    if (fs.existsSync(targetDir)) {
+      // Clean old installation
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    }
+    
+    // Copy all files from source bin to target bin (includes DLLs on Windows)
+    copyDirectory(binDir, targetDir);
   }
-  
-  // Copy all files from source bin to target bin (includes DLLs on Windows)
-  copyDirectory(binDir, targetDir);
   
   const targetPath = path.join(targetDir, exeName);
   
@@ -336,6 +344,51 @@ export async function ensureFFmpeg(progressCallback = () => {}) {
     return ffmpegPath;
   }
   
+  // Try extracting embedded ffmpeg from SEA binary
+  const embeddedPath = await extractEmbeddedFFmpeg();
+  if (embeddedPath) {
+    return embeddedPath;
+  }
+  
   // Download if not available
   return await downloadFFmpeg(progressCallback);
+}
+
+/**
+ * Extract ffmpeg binary embedded in the SEA (Single Executable Application).
+ * Returns the path to the extracted binary, or null if not embedded.
+ * The binary is cached in ~/.videodl-cli/ffmpeg/bin/ after first extraction.
+ */
+async function extractEmbeddedFFmpeg() {
+  try {
+    const sea = await import('node:sea');
+    if (typeof sea.isSea !== 'function' || !sea.isSea()) return null;
+    
+    let asset;
+    try {
+      asset = sea.getRawAsset('ffmpeg.bin');
+    } catch {
+      return null; // Asset not embedded in this build
+    }
+    
+    const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const cachePath = path.join(FFMPEG_DIR, 'bin', exeName);
+    
+    // Already extracted previously
+    if (fs.existsSync(cachePath)) {
+      return cachePath;
+    }
+    
+    console.log('Extracting embedded ffmpeg...');
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, Buffer.from(asset));
+    if (process.platform !== 'win32') {
+      fs.chmodSync(cachePath, 0o755);
+    }
+    console.log('Embedded ffmpeg extracted successfully!');
+    
+    return cachePath;
+  } catch {
+    return null;
+  }
 }
