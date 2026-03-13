@@ -9,6 +9,22 @@ import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 
 const NAME_PATTERN = /\/([^/]+?)(?:\.([a-z0-9]{1,5}))?(?:\?|#|$)/i;
 
+/**
+ * Return a filepath that doesn't collide with existing files.
+ * If "dir/name.ext" exists, returns "dir/name_1.ext", "dir/name_2.ext", etc.
+ */
+export function uniqueFilepath(filepath) {
+  if (!fs.existsSync(filepath)) return filepath;
+  const dir = path.dirname(filepath);
+  const ext = path.extname(filepath);
+  const base = path.basename(filepath, ext);
+  let n = 1;
+  while (fs.existsSync(path.join(dir, `${base}_${n}${ext}`))) {
+    n++;
+  }
+  return path.join(dir, `${base}_${n}${ext}`);
+}
+
 export class VideoDownloader extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -56,7 +72,7 @@ export class VideoDownloader extends EventEmitter {
     }
 
     const directory = options.directory || this.downloadFolder;
-    const filepath = path.join(directory, filename);
+    const filepath = uniqueFilepath(path.join(directory, filename));
 
     // Ensure directory exists
     if (!fs.existsSync(directory)) {
@@ -216,7 +232,7 @@ export class VideoDownloader extends EventEmitter {
       fs.mkdirSync(directory, { recursive: true });
     }
 
-    const finalPath = path.join(directory, options.filename);
+    const finalPath = uniqueFilepath(path.join(directory, options.filename));
     const videoTmpPath = finalPath + '.f_video.tmp';
     const audioTmpPath = finalPath + '.f_audio.tmp';
     const subTmpPaths = [];  // subtitle temp file paths
@@ -992,7 +1008,7 @@ export class VideoDownloader extends EventEmitter {
       fs.mkdirSync(directory, { recursive: true });
     }
     
-    const filepath = path.join(directory, filename.replace(/\.m3u8$/, '.mp4'));
+    const filepath = uniqueFilepath(path.join(directory, filename.replace(/\.m3u8$/, '.mp4')));
 
     this.emit('start', { filepath });
 

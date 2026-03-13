@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 #
 # Compile videodl standalone binary for Linux.
-# Output is placed in the dist/ directory.
+# Produces two binary variants:
+#   videodl-linux               - downloads ffmpeg on first use
+#   videodl-ffmpeg-linux        - ffmpeg embedded inside (fully standalone)
 #
 # Usage:
-#   ./compile.sh                # Build Linux binary
+#   ./compile.sh                # Build both variants
 #   ./compile.sh --bundle-only  # CJS bundle only (no binary)
 #   ./compile.sh --clean        # Clean dist/ then build
+#   ./compile.sh --no-ffmpeg    # Plain binary only (no ffmpeg variant)
 
 set -euo pipefail
 
@@ -28,11 +31,13 @@ error() {
 
 BUNDLE_ONLY=false
 CLEAN=false
+NO_FFMPEG=false
 
 for arg in "$@"; do
     case "$arg" in
         --bundle-only) BUNDLE_ONLY=true ;;
         --clean)       CLEAN=true ;;
+        --no-ffmpeg)   NO_FFMPEG=true ;;
         *)             echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
@@ -157,15 +162,21 @@ fi
 
 cd "$PROJECT_ROOT"
 
+# Build flags: always produce both variants unless --no-ffmpeg
+BUILD_FLAGS="--package"
+if [ "$NO_FFMPEG" = true ]; then
+    BUILD_FLAGS="$BUILD_FLAGS --no-ffmpeg"
+fi
+
 if [ "$BUNDLE_ONLY" = true ]; then
     step 'Building CJS bundle only'
     node build.mjs --bundle-only
 else
-    step 'Building Linux binary'
+    step 'Building Linux binary (both variants)'
     if [ -n "$OFFICIAL_NODE" ] && [ -f "$OFFICIAL_NODE" ]; then
-        VIDEODL_SEA_NODE="$OFFICIAL_NODE" node build.mjs
+        VIDEODL_SEA_NODE="$OFFICIAL_NODE" node build.mjs $BUILD_FLAGS
     else
-        node build.mjs
+        node build.mjs $BUILD_FLAGS
     fi
 fi
 
@@ -177,13 +188,17 @@ if [ -d "$DIST_DIR" ]; then
     for f in "$DIST_DIR"/*; do
         [ -f "$f" ] || continue
         name="$(basename "$f")"
+        # Skip intermediate/build files
+        case "$name" in
+            *.cjs|*.blob|*.json|node-official|node-linux) continue ;;
+        esac
         size_bytes="$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)"
         if [ "$size_bytes" -gt 1048576 ]; then
             size="$(awk "BEGIN { printf \"%.1f MB\", $size_bytes / 1048576 }")"
         else
             size="$(awk "BEGIN { printf \"%.0f KB\", $size_bytes / 1024 }")"
         fi
-        printf '  %-30s %s\n' "$name" "$size"
+        printf '  %-35s %s\n' "$name" "$size"
     done
 fi
 
