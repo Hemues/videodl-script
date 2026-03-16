@@ -1147,11 +1147,10 @@ export class VideoDownloader extends EventEmitter {
         }
       }
       
-      // When reading a local m3u8 file that references remote URLs,
-      // ffmpeg needs an explicit protocol whitelist to allow https fetches
-      if (variantTempFile) {
-        args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto');
-      }
+      // ffmpeg's HLS demuxer may restrict sub-resource protocols to
+      // file,crypto,data by default. Always whitelist the full set so
+      // remote segments / init sections (https) can be fetched.
+      args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto,data');
 
       // HLS pair: two separate inputs (video + audio variant playlists)
       if (options.hlsAudioUrl) {
