@@ -81,10 +81,14 @@ export class BaseExtractor {
 
   /**
    * Select best video-only + audio-only pair for DASH merge download.
-   * Returns { video, audio, ext } or null if no DASH formats available.
+   * Returns { video, audio, audioTracks, ext } or null if no DASH formats available.
+   * When multiple audio languages exist, returns one best track per language.
    * Downloading separate DASH streams is MUCH faster on YouTube (no throttling).
+   * @param {Array} formats
+   * @param {string} quality - 'best', 'worst', '720', etc.
+   * @param {string|null} audioLang - 'all' (all langs), specific lang code, or null (auto)
    */
-  selectFormatPair(formats, quality = 'best') {
+  selectFormatPair(formats, quality = 'best', audioLang = null) {
     if (!formats || formats.length === 0) return null;
 
     const videoOnly = formats.filter(f => f.hasVideo && !f.hasAudio);
@@ -138,12 +142,81 @@ export class BaseExtractor {
       }
     }
 
-    // Select best audio (highest bitrate)
-    const selectedAudio = [...audioOnly].sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+    // Group audio formats by language
+    const audioByLang = new Map();
+    for (const af of audioOnly) {
+      const lang = af.audioTrackLang || '_default';
+      if (!audioByLang.has(lang)) audioByLang.set(lang, []);
+      audioByLang.get(lang).push(af);
+    }
+
+    // Sort each language group by bitrate descending (best first)
+    for (const [, tracks] of audioByLang) {
+      tracks.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    }
+
+    let audioTracks;
+    const hasMultipleLangs = audioByLang.size > 1 && !audioByLang.has('_default');
+
+    if (!hasMultipleLangs) {
+      // Single language or no language info: pick highest bitrate
+      const best = [...audioOnly].sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+      audioTracks = [best];
+    } else if (audioLang && audioLang !== 'all') {
+      // Specific language requested
+      const langGroup = audioByLang.get(audioLang);
+      // Also try prefix match (e.g. 'en' matches 'en-US')
+      const prefixMatch = !langGroup ? [...audioByLang.entries()].find(([k]) => k.split('-')[0].toLowerCase() === audioLang.toLowerCase()) : null;
+      if (langGroup) {
+        audioTracks = [langGroup[0]];
+      } else if (prefixMatch) {
+        audioTracks = [prefixMatch[1][0]];
+      } else {
+      // Fallback: try Hungarian, then English, then default track, then highest bitrate
+        const findByPrefix = (prefix) => [...audioByLang.entries()].find(([k]) => k.split('-')[0].toLowerCase() === prefix);
+        const huMatch = findByPrefix('hu');
+        const enMatch = findByPrefix('en');
+        const defaultTrack = audioOnly.find(f => f.audioIsDefault);
+        audioTracks = [huMatch ? huMatch[1][0] : enMatch ? enMatch[1][0] : defaultTrack || [...audioOnly].sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0]];
+      }
+    } else {
+      // 'all' or auto with multiple languages: best track per language
+      audioTracks = [];
+      for (const [, tracks] of audioByLang) {
+        audioTracks.push(tracks[0]);
+      }
+      // Sort: Hungarian first, then English, then YouTube default, then alphabetically
+      const langPriority = (lang) => {
+        const base = (lang || '').split('-')[0].toLowerCase();
+        if (base === 'hu') return 0;
+        if (base === 'en') return 1;
+        return 2;
+      };
+      audioTracks.sort((a, b) => {
+        const aLang = a.audioTrackLang || '';
+        const bLang = b.audioTrackLang || '';
+        const aPri = langPriority(aLang);
+        const bPri = langPriority(bLang);
+        if (aPri !== bPri) return aPri - bPri;
+        if (a.audioIsDefault && !b.audioIsDefault) return -1;
+        if (!a.audioIsDefault && b.audioIsDefault) return 1;
+        return aLang.localeCompare(bLang);
+      });
+    }
+
+    if (hasMultipleLangs) {
+      console.log(`[FormatPair] Detected ${audioByLang.size} audio languages: ${[...audioByLang.keys()].join(', ')} → selected ${audioTracks.length} track(s)`);
+    }
+
+    const selectedAudio = audioTracks[0]; // primary track for backward compat
 
     // Determine output container based on codec compatibility
     const vcodec = (selectedVideo.vcodec || '').toLowerCase();
     const acodec = (selectedAudio.acodec || '').toLowerCase();
+    // Multiple audio tracks → always use mkv (most compatible container for multi-track)
+    if (audioTracks.length > 1) {
+      return { video: selectedVideo, audio: selectedAudio, audioTracks, ext: 'mkv' };
+    }
     // Pick container: webm for VP9/AV1+Opus, mp4 for H.264/AV1+AAC, mkv fallback
     const isWebmVideo = vcodec.startsWith('vp9') || vcodec.startsWith('vp09') || vcodec.startsWith('av01');
     const isWebmAudio = acodec.startsWith('opus') || acodec.startsWith('vorbis');
@@ -153,7 +226,7 @@ export class BaseExtractor {
     if (isWebmVideo && isWebmAudio) ext = 'webm';
     else if (isMp4Video && isMp4Audio) ext = 'mp4';
 
-    return { video: selectedVideo, audio: selectedAudio, ext };
+    return { video: selectedVideo, audio: selectedAudio, audioTracks, ext };
   }
 
   /**

@@ -232,9 +232,15 @@ export class VideoDownloader extends EventEmitter {
       fs.mkdirSync(directory, { recursive: true });
     }
 
+    // Normalize: accept audioStreams (array) or legacy audioStream (single)
+    const audioStreams = options.audioStreams || [options.audioStream];
+
     const finalPath = uniqueFilepath(path.join(directory, options.filename));
+    const incompletePath = finalPath + '.incomplete';
     const videoTmpPath = finalPath + '.f_video.tmp';
-    const audioTmpPath = finalPath + '.f_audio.tmp';
+    const audioTmpPaths = audioStreams.map((_, i) =>
+      audioStreams.length === 1 ? finalPath + '.f_audio.tmp' : finalPath + `.f_audio_${i}.tmp`
+    );
     const subTmpPaths = [];  // subtitle temp file paths
 
     // Ensure ffmpeg is ready before starting downloads
@@ -249,19 +255,20 @@ export class VideoDownloader extends EventEmitter {
       throw new Error(`Failed to setup ffmpeg: ${error.message}`);
     }
 
-    this.emit('start', { filepath: finalPath });
+    this.emit('start', { filepath: incompletePath });
 
     try {
-      // Phase 1: Download video + audio in parallel
+      // Phase 1: Download video + audio(s) in parallel
       this.emit('merge-phase', { phase: 'download', label: `Downloading video (${options.videoInfo}) + audio (${options.audioInfo}) in parallel...` });
 
-      let videoDownloaded = 0, audioDownloaded = 0;
+      let videoDownloaded = 0;
       let videoTotal = options.videoStream.filesize || 0;
-      let audioTotal = options.audioStream.filesize || 0;
+      const audioDownloaded = audioStreams.map(() => 0);
+      const audioTotals = audioStreams.map(a => a.filesize || 0);
 
       const emitCombinedProgress = () => {
-        const total = videoTotal + audioTotal;
-        const downloaded = videoDownloaded + audioDownloaded;
+        const total = videoTotal + audioTotals.reduce((s, t) => s + t, 0);
+        const downloaded = videoDownloaded + audioDownloaded.reduce((s, d) => s + d, 0);
         if (total > 0) {
           this.emit('progress', {
             downloaded,
@@ -276,37 +283,58 @@ export class VideoDownloader extends EventEmitter {
         cookies: options.cookies,
         rejectUnauthorized: options.rejectUnauthorized
       };
-      const audioOpts = {
-        headers: options.audioStream.headers || {},
-        cookies: options.cookies,
-        rejectUnauthorized: options.rejectUnauthorized
-      };
 
-      const [vSize, aSize] = await Promise.all([
+      const downloadPromises = [
         this._downloadStream(options.videoStream.url, videoTmpPath, videoOpts, (dl, total) => {
           videoDownloaded = dl;
           if (total > 0) videoTotal = total;
           emitCombinedProgress();
-        }),
-        this._downloadStream(options.audioStream.url, audioTmpPath, audioOpts, (dl, total) => {
-          audioDownloaded = dl;
-          if (total > 0) audioTotal = total;
-          emitCombinedProgress();
         })
-      ]);
+      ];
 
-      console.log(`  Video: ${(vSize / 1024 / 1024).toFixed(2)} MB  Audio: ${(aSize / 1024 / 1024).toFixed(2)} MB`);
+      for (let i = 0; i < audioStreams.length; i++) {
+        const aStream = audioStreams[i];
+        const audioOpts = {
+          headers: aStream.headers || {},
+          cookies: options.cookies,
+          rejectUnauthorized: options.rejectUnauthorized
+        };
+        downloadPromises.push(
+          this._downloadStream(aStream.url, audioTmpPaths[i], audioOpts, (dl, total) => {
+            audioDownloaded[i] = dl;
+            if (total > 0) audioTotals[i] = total;
+            emitCombinedProgress();
+          })
+        );
+      }
 
-      // Validate that both streams actually have data before proceeding
-      if (vSize === 0 || aSize === 0) {
-        const failed = [];
-        if (vSize === 0) failed.push('video');
-        if (aSize === 0) failed.push('audio');
+      const dlSizes = await Promise.all(downloadPromises);
+      const vSize = dlSizes[0];
+      const aSizes = dlSizes.slice(1);
+
+      const audioSizeStr = aSizes.map((s, i) => {
+        const label = audioStreams[i].lang || `audio${i}`;
+        return `${label}: ${(s / 1024 / 1024).toFixed(2)} MB`;
+      }).join('  ');
+      console.log(`  Video: ${(vSize / 1024 / 1024).toFixed(2)} MB  ${audioSizeStr}`);
+
+      // Validate that all streams have data
+      if (vSize === 0) {
         throw new Error(
-          `Download failed: ${failed.join(' and ')} stream(s) returned 0 bytes. ` +
+          'Download failed: video stream returned 0 bytes. ' +
           'The format URLs may have expired or the YouTube client returned unusable streams. ' +
           'Try again or use a different format (e.g., --format best).'
         );
+      }
+      const failedAudio = aSizes.map((s, i) => s === 0 ? (audioStreams[i].lang || `audio${i}`) : null).filter(Boolean);
+      if (failedAudio.length === aSizes.length) {
+        throw new Error(
+          `Download failed: all audio stream(s) returned 0 bytes (${failedAudio.join(', ')}). ` +
+          'Try again or use a different format.'
+        );
+      }
+      if (failedAudio.length > 0) {
+        console.log(`  ⚠ Warning: ${failedAudio.length} audio stream(s) returned 0 bytes: ${failedAudio.join(', ')}`);
       }
 
       // Phase 1b: Download subtitles if requested
@@ -326,11 +354,16 @@ export class VideoDownloader extends EventEmitter {
         }
       }
 
+      // Filter out failed audio tracks (0-byte)
+      const validAudioPaths = audioTmpPaths.filter((_, i) => aSizes[i] > 0);
+      const validAudioStreams = audioStreams.filter((_, i) => aSizes[i] > 0);
+
       // Phase 2: Pre-merge validation — ensure temp files are complete
       this.emit('merge-phase', { phase: 'validate', label: 'Validating downloaded streams...' });
+      const primaryAudioPath = validAudioPaths[0];
       const preMerge = await Promise.all([
         this._probeDuration(ffmpegPath, videoTmpPath),
-        this._probeDuration(ffmpegPath, audioTmpPath),
+        this._probeDuration(ffmpegPath, primaryAudioPath),
       ]);
       const [preVideoDur, preAudioDur] = preMerge;
       if (preVideoDur !== null && preAudioDur !== null) {
@@ -348,15 +381,23 @@ export class VideoDownloader extends EventEmitter {
         }
       }
 
-      // Phase 3: Merge with ffmpeg
+      // Build audio track metadata for merge
+      const audioTracksForMerge = validAudioPaths.map((p, i) => ({
+        path: p,
+        lang: validAudioStreams[i].lang || null,
+        name: validAudioStreams[i].name || null,
+      }));
+
+      // Phase 3: Merge with ffmpeg (write to .incomplete path)
+      const trackCount = audioTracksForMerge.length;
       const mergeLabel = subTmpPaths.length > 0
-        ? `Merging video + audio + ${subTmpPaths.length} subtitle(s) with ffmpeg...`
-        : 'Merging video + audio with ffmpeg...';
+        ? `Merging video + ${trackCount} audio track(s) + ${subTmpPaths.length} subtitle(s) with ffmpeg...`
+        : `Merging video + ${trackCount} audio track(s) with ffmpeg...`;
       this.emit('merge-phase', { phase: 'merge', label: mergeLabel });
-      await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTmpPath, finalPath, subTmpPaths);
+      await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths);
 
       // Phase 4: Post-merge validation — detect truncated output
-      const validation = await this._validateMerge(ffmpegPath, videoTmpPath, audioTmpPath, finalPath);
+      const validation = await this._validateMerge(ffmpegPath, videoTmpPath, primaryAudioPath, incompletePath);
       if (!validation.ok) {
         const pct = (validation.ratio * 100).toFixed(1);
         const expected = validation.videoDuration?.toFixed(1) || '?';
@@ -364,20 +405,16 @@ export class VideoDownloader extends EventEmitter {
         console.log(`  ⚠ Merge integrity check FAILED — output has ${got}s of ${expected}s (${pct}%)`);
         console.log(`  Attempting recovery: re-reading temp files and retrying merge...`);
 
-        // Recovery strategy: the most common cause is a partially-flushed
-        // temp file.  Re-open, read, and re-write each temp file to force
-        // a complete flush, then retry the merge.
-        for (const tmpPath of [videoTmpPath, audioTmpPath]) {
+        for (const tmpPath of [videoTmpPath, ...validAudioPaths]) {
           try {
             const buf = fs.readFileSync(tmpPath);
             fs.writeFileSync(tmpPath, buf);
           } catch {}
         }
 
-        await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTmpPath, finalPath, subTmpPaths);
+        await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths);
 
-        // Validate again
-        const retry = await this._validateMerge(ffmpegPath, videoTmpPath, audioTmpPath, finalPath);
+        const retry = await this._validateMerge(ffmpegPath, videoTmpPath, primaryAudioPath, incompletePath);
         if (!retry.ok) {
           const retryPct = (retry.ratio * 100).toFixed(1);
           const retryGot = retry.outputDuration?.toFixed(1) || '?';
@@ -388,13 +425,17 @@ export class VideoDownloader extends EventEmitter {
         }
       }
 
+      // Rename .incomplete → final path (file is fully merged and validated)
+      fs.renameSync(incompletePath, finalPath);
       const stats = fs.statSync(finalPath);
       this.emit('complete', { filepath: finalPath, size: stats.size });
       return finalPath;
     } finally {
       // Cleanup temp files
       try { if (fs.existsSync(videoTmpPath)) fs.unlinkSync(videoTmpPath); } catch {}
-      try { if (fs.existsSync(audioTmpPath)) fs.unlinkSync(audioTmpPath); } catch {}
+      for (const aPath of audioTmpPaths) {
+        try { if (fs.existsSync(aPath)) fs.unlinkSync(aPath); } catch {}
+      }
       for (const sub of subTmpPaths) {
         try { if (fs.existsSync(sub.path)) fs.unlinkSync(sub.path); } catch {}
       }
@@ -880,21 +921,24 @@ export class VideoDownloader extends EventEmitter {
   }
 
   /**
-   * Merge video and audio files using ffmpeg -c copy (no re-encoding).
-   * Optionally embeds subtitle tracks.
-   * @param {string} ffmpegPath - path to ffmpeg binary
-   * @param {string} videoPath - video temp file
-   * @param {string} audioPath - audio temp file
-   * @param {string} outputPath - final output file
-   * @param {Array} [subtitlePaths] - array of {path, lang, name} objects
+   * Merge video + audio track(s) + optional subtitles with ffmpeg.
+   * @param {string} ffmpegPath
+   * @param {string} videoPath
+   * @param {Array<{path, lang?, name?}>} audioTracks - Array of audio track objects
+   * @param {string} outputPath
+   * @param {Array<{path, lang, name}>} subtitlePaths
    */
-  _ffmpegMerge(ffmpegPath, videoPath, audioPath, outputPath, subtitlePaths = []) {
+  _ffmpegMerge(ffmpegPath, videoPath, audioTracks, outputPath, subtitlePaths = []) {
     return new Promise((resolve, reject) => {
       const args = [
         '-loglevel', 'warning',
         '-i', videoPath,
-        '-i', audioPath
       ];
+
+      // Add audio inputs
+      for (const audio of audioTracks) {
+        args.push('-i', audio.path);
+      }
 
       // Add subtitle inputs
       for (const sub of subtitlePaths) {
@@ -915,10 +959,25 @@ export class VideoDownloader extends EventEmitter {
         }
       }
 
-      // Map all streams: video from input 0, audio from input 1, subs from inputs 2+
-      args.push('-map', '0:v', '-map', '1:a');
+      // Map streams: video from input 0, audio from inputs 1..N, subs from N+1..
+      args.push('-map', '0:v');
+      for (let i = 0; i < audioTracks.length; i++) {
+        args.push('-map', `${i + 1}:a`);
+      }
+      const subInputOffset = 1 + audioTracks.length;
       for (let i = 0; i < subtitlePaths.length; i++) {
-        args.push('-map', `${i + 2}:0`);
+        args.push('-map', `${subInputOffset + i}:0`);
+      }
+
+      // Set audio stream metadata (language + title) if available
+      for (let i = 0; i < audioTracks.length; i++) {
+        const audio = audioTracks[i];
+        if (audio.lang) {
+          args.push(`-metadata:s:a:${i}`, `language=${audio.lang}`);
+        }
+        if (audio.name) {
+          args.push(`-metadata:s:a:${i}`, `title=${audio.name}`);
+        }
       }
 
       // Set subtitle metadata (language + title)
@@ -929,6 +988,12 @@ export class VideoDownloader extends EventEmitter {
           args.push(`-metadata:s:s:${i}`, `title=${sub.name}`);
         }
       }
+
+      // Explicitly set output format so ffmpeg doesn't rely on the
+      // .incomplete extension to guess the container.
+      const outExt = path.extname(outputPath.replace(/\.incomplete$/, '')).replace('.', '');
+      const fmtMap = { mp4: 'mp4', mkv: 'matroska', webm: 'webm', m4a: 'ipod', '3gp': '3gp' };
+      if (fmtMap[outExt]) args.push('-f', fmtMap[outExt]);
 
       args.push('-y', outputPath);
 
@@ -1009,8 +1074,9 @@ export class VideoDownloader extends EventEmitter {
     }
     
     const filepath = uniqueFilepath(path.join(directory, filename.replace(/\.m3u8$/, '.mp4')));
+    const incompletePath = filepath + '.incomplete';
 
-    this.emit('start', { filepath });
+    this.emit('start', { filepath: incompletePath });
 
     // Ensure ffmpeg is available
     let ffmpegPath;
@@ -1152,8 +1218,29 @@ export class VideoDownloader extends EventEmitter {
       // remote segments / init sections (https) can be fetched.
       args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto,data');
 
-      // HLS pair: two separate inputs (video + audio variant playlists)
-      if (options.hlsAudioUrl) {
+      // HLS pair: two or more separate inputs (video + audio variant playlists)
+      if (options.hlsAudioUrls && options.hlsAudioUrls.length > 0) {
+        // Multi-audio: video input + N audio inputs
+        args.push('-i', hlsUrl);  // input 0: video-only variant
+        for (const audio of options.hlsAudioUrls) {
+          args.push('-i', audio.url);  // inputs 1..N: audio variants
+        }
+        args.push('-map', '0:v');
+        for (let i = 0; i < options.hlsAudioUrls.length; i++) {
+          args.push('-map', `${i + 1}:a`);
+        }
+        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+        // Set language metadata for each audio stream
+        for (let i = 0; i < options.hlsAudioUrls.length; i++) {
+          const audio = options.hlsAudioUrls[i];
+          if (audio.lang) {
+            args.push(`-metadata:s:a:${i}`, `language=${audio.lang}`);
+          }
+          if (audio.name) {
+            args.push(`-metadata:s:a:${i}`, `title=${audio.name}`);
+          }
+        }
+      } else if (options.hlsAudioUrl) {
         args.push('-i', hlsUrl);  // input 0: video-only variant
         // Audio input needs the same headers/cookies — they were added above -i
         args.push('-i', options.hlsAudioUrl);  // input 1: audio-only variant
@@ -1163,7 +1250,13 @@ export class VideoDownloader extends EventEmitter {
         args.push('-i', hlsUrl);
         args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
       }
-      args.push('-y', filepath);
+      // Explicitly set output format so ffmpeg doesn't rely on the
+      // .incomplete extension to guess the container.
+      const hlsOutExt = path.extname(incompletePath.replace(/\.incomplete$/, '')).replace('.', '');
+      const hlsFmtMap = { mp4: 'mp4', mkv: 'matroska', webm: 'webm', m4a: 'ipod' };
+      if (hlsFmtMap[hlsOutExt]) args.push('-f', hlsFmtMap[hlsOutExt]);
+
+      args.push('-y', incompletePath);
 
       console.log(`[HLS] ffmpeg command: ${ffmpegPath} ${args.join(' ')}`);
       console.log(`[HLS] Using URL: ${hlsUrl.substring(0, 100)}...`);
@@ -1231,6 +1324,14 @@ export class VideoDownloader extends EventEmitter {
       ffmpeg.on('close', async (code) => {
         cleanupVariantTemp();
         if (code === 0) {
+          // Rename .incomplete → final path before post-processing
+          try {
+            fs.renameSync(incompletePath, filepath);
+          } catch (renameErr) {
+            reject(new Error(`Failed to rename .incomplete to final: ${renameErr.message}`));
+            return;
+          }
+
           // Post-process: embed subtitles if provided
           if (options.subtitles && options.subtitles.length > 0) {
             try {
