@@ -571,9 +571,11 @@ export class YouTubeExtractor extends BaseExtractor {
       const name = (mediaAttrs.match(/NAME="([^"]+)"/) || [])[1] || 'audio';
       const channels = (mediaAttrs.match(/CHANNELS="(\d+)"/) || [])[1] || '';
       const codecMatch = (mediaAttrs.match(/CODECS="([^"]+)"/) || [])[1] || '';
+      const language = (mediaAttrs.match(/LANGUAGE="([^"]+)"/) || [])[1] || '';
+      const isDefault = (mediaAttrs.match(/DEFAULT=(YES|NO)/) || [])[1] === 'YES';
 
       if (!audioGroups[groupId]) audioGroups[groupId] = [];
-      audioGroups[groupId].push({ uri, name, channels, codec: codecMatch, groupId });
+      audioGroups[groupId].push({ uri, name, channels, codec: codecMatch, groupId, language, isDefault });
     }
 
     const hasDemuxedAudio = Object.keys(audioGroups).length > 0;
@@ -675,6 +677,9 @@ export class YouTubeExtractor extends BaseExtractor {
             fps: null,
             vcodec: null,
             acodec: aud.codec || 'mp4a.40.2',
+            audioTrackLang: aud.language || undefined,
+            audioTrackName: aud.name || undefined,
+            audioIsDefault: aud.isDefault || false,
             headers,
             _hlsMasterUrl: masterUrl,
             _audioGroupId: groupId,
@@ -1034,6 +1039,9 @@ export class YouTubeExtractor extends BaseExtractor {
           fps: fmt.fps || null,
           vcodec: hasVideo ? (codecParts[0] || null) : null,
           acodec: hasAudio ? (codecParts[hasVideo ? 1 : 0] || null) : null,
+          audioTrackLang: fmt.audioTrack?.id?.split('.')[0] || null,
+          audioTrackName: fmt.audioTrack?.displayName || null,
+          audioIsDefault: fmt.audioTrack?.audioIsDefault || false,
           headers: formatDownloadHeaders
         });
       }

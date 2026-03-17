@@ -80,6 +80,7 @@ program
   .option('--no-subtitle', 'Do not download/embed subtitles (subtitles are included by default when available)')
   .option('--sub-lang <lang>', 'Subtitle language code to download (e.g., en, hu, de). Use "all" for all tracks')
   .option('--sub-translate <lang>', 'Auto-translate subtitles to this language code (e.g., hu for Hungarian)')
+  .option('--audio-lang <lang>', 'Audio language: specific code (en, de), "all" for all tracks (default: auto-detect)')
   .action(async (rawUrl, options) => {
     try {
       const url = cleanUrl(rawUrl);
@@ -207,17 +208,24 @@ program
         
         // Select format — try DASH merge first (much faster on YouTube)
         const extractor = (await import('./extractors/index.js')).getExtractor(url);
-        formatPair = extractor.selectFormatPair(videoInfo.formats, options.format);
+        formatPair = extractor.selectFormatPair(videoInfo.formats, options.format, options.audioLang || null);
         if (formatPair) {
           const isHlsPair = formatPair.video.protocol === 'hls' && formatPair.audio.protocol === 'hls';
           const vInfo = `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim();
           const aInfo = `${formatPair.audio.quality} ${formatPair.audio.acodec || ''}`.trim();
           if (isHlsPair) {
-            console.log(chalk.cyan(`⚡ HLS merge: ${vInfo} + ${aInfo} → .mp4`));
-            // Stash both variant URLs so ffmpeg can open them as two separate -i inputs.
-            // This avoids writing a local m3u8 file (which breaks ffmpeg's -headers option).
+            const trackCount = formatPair.audioTracks ? formatPair.audioTracks.length : 1;
+            const extLabel = trackCount > 1 ? '.mkv' : '.mp4';
+            console.log(chalk.cyan(`⚡ HLS merge: ${vInfo} + ${trackCount} audio track(s) → ${extLabel}`));
+            // Stash variant URLs so ffmpeg can open them as separate -i inputs.
             formatPair._hlsVideoUrl = formatPair.video.url;
-            formatPair._hlsAudioUrl = formatPair.audio.url;
+            if (formatPair.audioTracks && formatPair.audioTracks.length > 1) {
+              formatPair._hlsAudioUrls = formatPair.audioTracks.map(a => ({
+                url: a.url, lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+              }));
+            } else {
+              formatPair._hlsAudioUrl = formatPair.audio.url;
+            }
           } else {
             console.log(chalk.cyan(`⚡ DASH merge: ${vInfo} + ${aInfo} → .${formatPair.ext}`));
           }
@@ -336,8 +344,9 @@ program
         filename = options.output;
       } else {
         const baseName = sanitizeFilename(videoInfo.title);
-        // HLS pair → always mp4 (ffmpeg output), otherwise use formatPair or selectedFormat ext
-        const ext = (formatPair && formatPair._hlsVideoUrl) ? 'mp4'
+        // HLS pair → mkv for multi-audio, mp4 for single, otherwise use formatPair or selectedFormat ext
+        const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv'
+          : (formatPair && formatPair._hlsVideoUrl) ? 'mp4'
           : formatPair ? formatPair.ext
           : (selectedFormat.ext || 'mp4');
         // Add domain by default (baseUrl defaults to true)
@@ -403,7 +412,11 @@ program
       if (formatPair && formatPair._hlsVideoUrl) {
         // HLS pair: pass video + audio variant URLs as separate ffmpeg inputs
         downloadOptions.url = formatPair._hlsVideoUrl;
-        downloadOptions.hlsAudioUrl = formatPair._hlsAudioUrl;
+        if (formatPair._hlsAudioUrls) {
+          downloadOptions.hlsAudioUrls = formatPair._hlsAudioUrls;
+        } else {
+          downloadOptions.hlsAudioUrl = formatPair._hlsAudioUrl;
+        }
         downloadOptions.formatHeaders = formatPair.video.headers;
 
         // Resolve subtitle downloads (same logic as DASH branch)
@@ -421,7 +434,7 @@ program
               subtitleDownloads.push({ url: transUrl, lang: translateLang, name: `${translateLang} (auto-translated)` });
               console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${translateLang} (auto-translated from ${firstTrack.lang})`));
             }
-          } else if (requestedLang === 'all') {
+          } else if (requestedLang === 'all' || !requestedLang) {
             for (const [lang, sub] of Object.entries(subs)) {
               subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
             }
@@ -439,10 +452,6 @@ program
             } else {
               console.log(chalk.yellow(`\u26A0 Subtitle language '${requestedLang}' not available`));
             }
-          } else {
-            const [lang, sub] = Object.entries(subs)[0];
-            subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
-            console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${lang} - ${sub.name}`));
           }
         }
         if (subtitleDownloads.length > 0) {
@@ -470,8 +479,8 @@ program
             } else {
               console.log(chalk.yellow('\u26A0 Subtitle track is not translatable'));
             }
-          } else if (requestedLang === 'all') {
-            // Download all available subtitle tracks
+          } else if (requestedLang === 'all' || !requestedLang) {
+            // Default: download all available subtitle tracks
             for (const [lang, sub] of Object.entries(subs)) {
               subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
             }
@@ -491,21 +500,20 @@ program
             } else {
               console.log(chalk.yellow(`\u26A0 Subtitle language '${requestedLang}' not available`));
             }
-          } else {
-            // Default: first available track
-            const [lang, sub] = Object.entries(subs)[0];
-            subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
-            console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${lang} - ${sub.name}`));
           }
         } else if (wantSubs && (options.subLang || options.subTranslate)) {
           console.log(chalk.yellow('\u26A0 No subtitles available for this video'));
         }
 
+        const audioStreams = (formatPair.audioTracks || [formatPair.audio]).map(a => ({
+          url: a.url, headers: a.headers, filesize: a.filesize || 0,
+          lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+        }));
         await downloader.downloadAndMerge({
           videoStream: { url: formatPair.video.url, headers: formatPair.video.headers, filesize: formatPair.video.filesize || 0 },
-          audioStream: { url: formatPair.audio.url, headers: formatPair.audio.headers, filesize: formatPair.audio.filesize || 0 },
+          audioStreams,
           videoInfo: `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim(),
-          audioInfo: `${formatPair.audio.quality} ${formatPair.audio.acodec || ''}`.trim(),
+          audioInfo: audioStreams.map(a => `${a.lang || 'audio'}`).join('+'),
           filename: filename,
           directory: options.directory,
           cookies: cookies,
@@ -524,7 +532,7 @@ program
           const subs = videoInfo.subtitles;
           const requestedLang = options.subLang || null;
 
-          if (requestedLang === 'all') {
+          if (requestedLang === 'all' || !requestedLang) {
             for (const [lang, sub] of Object.entries(subs)) {
               subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
             }
@@ -535,11 +543,6 @@ program
             console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${requestedLang} - ${sub.name}`));
           } else if (requestedLang && !subs[requestedLang]) {
             console.log(chalk.yellow(`\u26A0 Subtitle language '${requestedLang}' not available`));
-          } else {
-            // Default: first available track
-            const [lang, sub] = Object.entries(subs)[0];
-            subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
-            console.log(chalk.cyan(`\uD83D\uDCDD Subtitle: ${lang} - ${sub.name}`));
           }
         }
         if (subtitleDownloads.length > 0) {
@@ -996,6 +999,7 @@ program
   .option('--no-subtitle', 'Do not download/embed subtitles')
   .option('--sub-lang <lang>', 'Subtitle language code')
   .option('--sub-translate <lang>', 'Auto-translate subtitles to this language code')
+  .option('--audio-lang <lang>', 'Audio language: specific code (en, de), "all" for all tracks (default: auto-detect)')
   .action(async (rawUrl, options) => {
     try {
       const url = cleanUrl(rawUrl);
@@ -1018,9 +1022,20 @@ program
         jsonLine({ status: 'extracted', title: videoInfo.title, id: videoInfo.id || '' });
 
         const extractor = getExtractor(url);
-        formatPair = extractor.selectFormatPair(videoInfo.formats, options.format);
+        formatPair = extractor.selectFormatPair(videoInfo.formats, options.format, options.audioLang || null);
         if (formatPair) {
           selectedFormat = formatPair.video;
+          // Detect HLS pairs — route to downloadHLS instead of DASH merge
+          if (formatPair.video.protocol === 'hls' && formatPair.audio.protocol === 'hls') {
+            formatPair._hlsVideoUrl = formatPair.video.url;
+            if (formatPair.audioTracks && formatPair.audioTracks.length > 1) {
+              formatPair._hlsAudioUrls = formatPair.audioTracks.map(a => ({
+                url: a.url, lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+              }));
+            } else {
+              formatPair._hlsAudioUrl = formatPair.audio.url;
+            }
+          }
         } else {
           selectedFormat = extractor.selectFormat(videoInfo.formats, options.format);
         }
@@ -1039,7 +1054,7 @@ program
         filename = options.output;
       } else {
         const baseName = sanitize(videoInfo.title);
-        const ext = formatPair ? formatPair.ext : (selectedFormat.ext || 'mp4');
+        const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv' : (formatPair && formatPair._hlsVideoUrl) ? 'mp4' : formatPair ? formatPair.ext : (selectedFormat.ext || 'mp4');
         if (options.baseUrl !== false) {
           const domain = extractDomain(url);
           filename = domain ? `${baseName}-${domain}.${ext}` : `${baseName}.${ext}`;
@@ -1114,39 +1129,61 @@ program
         return;
       }
 
-      // Choose download method: DASH merge, HLS, or direct
-      if (formatPair) {
-        // Resolve subtitles
-        const wantSubs = options.subtitle !== false;
-        let subtitleDownloads = [];
-        if (wantSubs && videoInfo.subtitles && Object.keys(videoInfo.subtitles).length > 0) {
-          const subs = videoInfo.subtitles;
-          const requestedLang = options.subLang || null;
-          const translateLang = options.subTranslate || null;
+      // Resolve subtitles (shared by all download methods)
+      const wantSubs = options.subtitle !== false;
+      let subtitleDownloads = [];
+      if (wantSubs && videoInfo.subtitles && Object.keys(videoInfo.subtitles).length > 0) {
+        const subs = videoInfo.subtitles;
+        const requestedLang = options.subLang || null;
+        const translateLang = options.subTranslate || null;
 
-          if (translateLang) {
-            const firstTrack = Object.values(subs)[0];
-            if (firstTrack.isTranslatable) {
-              subtitleDownloads.push({ url: firstTrack.formats.vtt + '&tlang=' + translateLang, lang: translateLang, name: `${translateLang} (auto-translated)` });
-            }
-          } else if (requestedLang === 'all') {
-            for (const [lang, sub] of Object.entries(subs)) {
-              subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
-            }
-          } else if (requestedLang && subs[requestedLang]) {
-            const sub = subs[requestedLang];
-            subtitleDownloads.push({ url: sub.formats.vtt, lang: requestedLang, name: sub.name });
-          } else {
-            const [lang, sub] = Object.entries(subs)[0];
+        if (translateLang) {
+          const firstTrack = Object.values(subs)[0];
+          if (firstTrack.isTranslatable) {
+            subtitleDownloads.push({ url: firstTrack.formats.vtt + '&tlang=' + translateLang, lang: translateLang, name: `${translateLang} (auto-translated)` });
+          }
+        } else if (requestedLang === 'all' || !requestedLang) {
+          // Default: download all available subtitle tracks
+          for (const [lang, sub] of Object.entries(subs)) {
+            subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
+          }
+        } else if (requestedLang && subs[requestedLang]) {
+          const sub = subs[requestedLang];
+          subtitleDownloads.push({ url: sub.formats.vtt, lang: requestedLang, name: sub.name });
+        } else {
+          // Requested lang not found — still download all
+          for (const [lang, sub] of Object.entries(subs)) {
             subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
           }
         }
+      }
 
+      // Choose download method: HLS pair, DASH merge, HLS single, or direct
+      if (formatPair && formatPair._hlsVideoUrl) {
+        // HLS pair: pass video + audio variant URLs as separate ffmpeg inputs
+        const hlsOpts = {
+          url: formatPair._hlsVideoUrl,
+          filename, directory: options.directory,
+          formatHeaders: formatPair.video.headers,
+          rejectUnauthorized: options.sslVerify, cookies,
+          subtitles: subtitleDownloads.length > 0 ? subtitleDownloads : undefined,
+        };
+        if (formatPair._hlsAudioUrls) {
+          hlsOpts.hlsAudioUrls = formatPair._hlsAudioUrls;
+        } else {
+          hlsOpts.hlsAudioUrl = formatPair._hlsAudioUrl;
+        }
+        await downloader.downloadHLS(hlsOpts);
+      } else if (formatPair) {
+        const audioStreams = (formatPair.audioTracks || [formatPair.audio]).map(a => ({
+          url: a.url, headers: a.headers, filesize: a.filesize || 0,
+          lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+        }));
         await downloader.downloadAndMerge({
           videoStream: { url: formatPair.video.url, headers: formatPair.video.headers, filesize: formatPair.video.filesize || 0 },
-          audioStream: { url: formatPair.audio.url, headers: formatPair.audio.headers, filesize: formatPair.audio.filesize || 0 },
+          audioStreams,
           videoInfo: `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim(),
-          audioInfo: `${formatPair.audio.quality} ${formatPair.audio.acodec || ''}`.trim(),
+          audioInfo: audioStreams.map(a => `${a.lang || 'audio'}`).join('+'),
           filename, directory: options.directory, cookies, rejectUnauthorized: options.sslVerify, subtitles: subtitleDownloads,
         });
       } else if (selectedFormat.protocol === 'hls' || selectedFormat.ext === 'm3u8' || (selectedFormat.url && selectedFormat.url.includes('.m3u8'))) {
