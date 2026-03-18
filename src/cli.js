@@ -965,6 +965,18 @@ program
   .description('Extract video information and output as JSON (machine-readable)')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format')
   .action(async (rawUrl, options) => {
+    // Redirect ALL stdout writes to stderr so only jsonLine() output
+    // (which uses fs.writeSync(1,…) — a direct fd write) reaches stdout.
+    // This prevents console.log, process.stdout.write, and any other
+    // high-level stdout writes from corrupting the JSON output when
+    // stdout is a pipe (subprocess capture).
+    // Uses fs.writeSync(2, ...) for a direct fd-level redirect that works
+    // reliably in Node.js SEA (Single Executable Application) binaries.
+    process.stdout.write = (chunk, enc, cb) => {
+      fs.writeSync(2, typeof chunk === 'string' ? chunk : Buffer.from(chunk));
+      if (typeof cb === 'function') cb();
+      return true;
+    };
     try {
       const url = cleanUrl(rawUrl);
       let cookies = null;
@@ -1058,6 +1070,12 @@ program
   .option('--sub-translate <lang>', 'Auto-translate subtitles to this language code')
   .option('--audio-lang <lang>', 'Audio language: specific code (en, de), "all" for all tracks (default: auto-detect)')
   .action(async (rawUrl, options) => {
+    // Redirect ALL stdout writes to stderr (see extract command for rationale).
+    process.stdout.write = (chunk, enc, cb) => {
+      fs.writeSync(2, typeof chunk === 'string' ? chunk : Buffer.from(chunk));
+      if (typeof cb === 'function') cb();
+      return true;
+    };
     try {
       const url = cleanUrl(rawUrl);
       let cookies = null;
