@@ -816,6 +816,79 @@ export class YouTubeExtractor extends BaseExtractor {
     }
   }
 
+  // ========== Search ==========
+
+  /**
+   * Extract video results from a YouTube search URL.
+   * Returns a playlist-style object with entries for each video found.
+   */
+  async _extractSearch(url, options) {
+    console.log(`[${this.name}] Handling as search URL`);
+
+    const pageHeaders = { ...YT_HEADERS };
+    if (this._cookieHeader) pageHeaders['Cookie'] = this._cookieHeader;
+
+    const response = await got(url, {
+      headers: pageHeaders,
+      timeout: { request: 30000 },
+      followRedirect: true,
+    });
+    const html = response.body;
+
+    // Extract ytInitialData from the search results page
+    const dataMatch = html.match(/var\s+ytInitialData\s*=\s*(\{.+?\})\s*;/s) ||
+                      html.match(/ytInitialData\s*=\s*(\{.+?\})\s*;/s);
+    if (!dataMatch) throw new Error('Could not parse YouTube search results');
+
+    let initialData;
+    try { initialData = JSON.parse(dataMatch[1]); } catch {
+      throw new Error('Failed to parse YouTube search data');
+    }
+
+    // Navigate to the video results in ytInitialData
+    const contents = initialData?.contents?.twoColumnSearchResultsRenderer
+      ?.primaryContents?.sectionListRenderer?.contents;
+    if (!contents) throw new Error('No search results found');
+
+    const entries = [];
+    for (const section of contents) {
+      const items = section?.itemSectionRenderer?.contents;
+      if (!items) continue;
+      for (const item of items) {
+        const renderer = item?.videoRenderer;
+        if (!renderer?.videoId) continue;
+        entries.push({
+          _type: 'video',
+          id: renderer.videoId,
+          title: renderer.title?.runs?.[0]?.text || `Video ${renderer.videoId}`,
+          url: `https://www.youtube.com/watch?v=${renderer.videoId}`,
+          webpage_url: `https://www.youtube.com/watch?v=${renderer.videoId}`,
+          duration: this._parseDuration(renderer.lengthText?.simpleText),
+          extractor: this.name,
+        });
+      }
+    }
+
+    if (entries.length === 0) throw new Error('No videos found in search results');
+    console.log(`[${this.name}] Found ${entries.length} video(s) in search results`);
+
+    return {
+      _type: 'playlist',
+      title: `YouTube Search: ${new URL(url).searchParams.get('search_query') || 'unknown'}`,
+      entries,
+      extractor: this.name,
+      url,
+    };
+  }
+
+  _parseDuration(text) {
+    if (!text) return null;
+    const parts = text.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts[0] || null;
+  }
+
   // ========== Main Extract ==========
 
   async extract(url, options = {}) {
@@ -831,6 +904,11 @@ export class YouTubeExtractor extends BaseExtractor {
       if (this._cookieHeader) {
         console.log(`[${this.name}] Using ${options.cookies.length} cookies (${this._cookieHeader.split(';').length} matching)`);
       }
+    }
+
+    // Handle search URLs → return first result as a redirect
+    if (/\/results\?.*search_query=/i.test(url)) {
+      return await this._extractSearch(url, options);
     }
 
     const videoId = this._extractVideoId(url);

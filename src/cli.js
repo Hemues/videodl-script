@@ -947,6 +947,29 @@ program
       const videoInfo = await extractVideoInfo(url, { cookies });
 
       // Build a normalized output structure for the backend
+      // Handle playlist/search results vs single video
+      if (videoInfo._type === 'playlist' && videoInfo.entries) {
+        const result = {
+          status: 'ok',
+          _type: 'playlist',
+          title: videoInfo.title || 'Playlist',
+          url: url,
+          extractor: videoInfo.extractor || 'unknown',
+          entries: videoInfo.entries.map(e => ({
+            _type: 'video',
+            id: e.id || '',
+            title: e.title || 'Untitled',
+            url: e.url || e.webpage_url || '',
+            webpage_url: e.webpage_url || e.url || '',
+            duration: e.duration || null,
+            extractor: e.extractor || videoInfo.extractor || 'unknown',
+          })),
+        };
+        jsonLine(result);
+        process.exit(0);
+        return;
+      }
+
       const result = {
         status: 'ok',
         id: videoInfo.id || '',
@@ -978,6 +1001,7 @@ program
       };
 
       jsonLine(result);
+      process.exit(0);
     } catch (error) {
       jsonLine({ status: 'error', msg: error.message });
       process.exit(1);
