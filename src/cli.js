@@ -954,9 +954,26 @@ function formatDuration(seconds) {
 /**
  * Write a JSON line to stdout (for machine-readable output).
  * Each message is a single JSON object on its own line.
+ * Handles partial writes and EAGAIN on non-blocking pipes (Node.js sets pipe
+ * fds to non-blocking mode). When the 64 KB pipe buffer is full, we sleep
+ * briefly and retry until the consumer (Python subprocess) drains it.
  */
 function jsonLine(obj) {
-  fs.writeSync(1, JSON.stringify(obj) + '\n');
+  const buf = Buffer.from(JSON.stringify(obj) + '\n');
+  let written = 0;
+  while (written < buf.length) {
+    try {
+      const n = fs.writeSync(1, buf, written, buf.length - written);
+      if (n > 0) written += n;
+    } catch (e) {
+      if (e.code === 'EAGAIN' || e.code === 'EWOULDBLOCK') {
+        // Pipe buffer full — sleep 5 ms to let the consumer drain it
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 // Extract command — output video info as JSON for programmatic use
@@ -1045,9 +1062,17 @@ program
         webpage_url: url,
       };
 
+      // Set exitCode before writing — if jsonLine throws after a partial
+      // write (e.g. EPIPE on a Linux pipe), the process should still exit 0
+      // because the JSON data was delivered.
+      process.exitCode = 0;
       jsonLine(result);
       process.exit(0);
     } catch (error) {
+      if (process.exitCode === 0) {
+        // jsonLine with status=ok was already set — don't overwrite with error
+        process.exit(0);
+      }
       jsonLine({ status: 'error', msg: error.message });
       process.exit(1);
     }
@@ -1788,4 +1813,4 @@ if (firstArg && !knownCommands.includes(firstArg) && /^https?:\/\//i.test(firstA
 }
 
 // Parse command
-program.parse();
+program.parseAsync();
