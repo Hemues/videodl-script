@@ -185,7 +185,8 @@ program
             const res = fmt.height ? `${fmt.height}p`.padEnd(6) : '      ';
             const codec = [fmt.vcodec, fmt.acodec].filter(Boolean).join('+');
             const size = fmt.filesize ? `${(fmt.filesize / 1024 / 1024).toFixed(1)}MB` : '';
-            console.log(`  [${String(idx).padStart(2)}] ${type} ${res} ${fmt.quality.padEnd(10)} ${fmt.ext.padEnd(5)} ${codec.padEnd(20)} ${size}`);
+            const premium = fmt.isPremium ? chalk.yellow(' ★ Premium') : '';
+            console.log(`  [${String(idx).padStart(2)}] ${type} ${res} ${fmt.quality.padEnd(10)} ${fmt.ext.padEnd(5)} ${codec.padEnd(20)} ${size}${premium}`);
           });
           const combined = videoInfo.formats.filter(f => f.hasVideo && f.hasAudio);
           const voCount = videoInfo.formats.filter(f => f.hasVideo && !f.hasAudio).length;
@@ -213,10 +214,11 @@ program
           const isHlsPair = formatPair.video.protocol === 'hls' && formatPair.audio.protocol === 'hls';
           const vInfo = `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim();
           const aInfo = `${formatPair.audio.quality} ${formatPair.audio.acodec || ''}`.trim();
+          const premiumLabel = formatPair.video.isPremium ? ' (Premium enhanced bitrate)' : '';
           if (isHlsPair) {
             const trackCount = formatPair.audioTracks ? formatPair.audioTracks.length : 1;
             const extLabel = trackCount > 1 ? '.mkv' : '.mp4';
-            console.log(chalk.cyan(`⚡ HLS merge: ${vInfo} + ${trackCount} audio track(s) → ${extLabel}`));
+            console.log(chalk.cyan(`⚡ HLS merge: ${vInfo}${premiumLabel} + ${trackCount} audio track(s) → ${extLabel}`));
             // Stash variant URLs so ffmpeg can open them as separate -i inputs.
             formatPair._hlsVideoUrl = formatPair.video.url;
             if (formatPair.audioTracks && formatPair.audioTracks.length > 1) {
@@ -227,12 +229,13 @@ program
               formatPair._hlsAudioUrl = formatPair.audio.url;
             }
           } else {
-            console.log(chalk.cyan(`⚡ DASH merge: ${vInfo} + ${aInfo} → .${formatPair.ext}`));
+            console.log(chalk.cyan(`⚡ DASH merge: ${vInfo}${premiumLabel} + ${aInfo} → .${formatPair.ext}`));
           }
           selectedFormat = formatPair.video; // for filename building
         } else {
           selectedFormat = extractor.selectFormat(videoInfo.formats, options.format);
-          console.log(chalk.cyan(`Selected format: ${selectedFormat.quality} (${selectedFormat.height}p)`));
+          const premiumTag = selectedFormat.isPremium ? ' (Premium enhanced bitrate)' : '';
+          console.log(chalk.cyan(`Selected format: ${selectedFormat.quality} (${selectedFormat.height}p)${premiumTag}`));
         }
         
       } catch (extractError) {
@@ -1049,6 +1052,9 @@ program
         formatPair = extractor.selectFormatPair(videoInfo.formats, options.format, options.audioLang || null);
         if (formatPair) {
           selectedFormat = formatPair.video;
+          if (formatPair.video.isPremium) {
+            jsonLine({ status: 'info', msg: `Premium enhanced bitrate: ${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim() });
+          }
           // Detect HLS pairs — route to downloadHLS instead of DASH merge
           if (formatPair.video.protocol === 'hls' && formatPair.audio.protocol === 'hls') {
             formatPair._hlsVideoUrl = formatPair.video.url;

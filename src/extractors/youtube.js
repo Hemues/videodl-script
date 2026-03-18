@@ -1086,7 +1086,11 @@ export class YouTubeExtractor extends BaseExtractor {
         else if (mimeType.includes('audio/webm')) ext = 'webm';
         else if (mimeType.includes('video/3gpp')) ext = '3gp';
 
-        let quality = fmt.qualityLabel || fmt.quality || 'unknown';
+        // Detect YouTube Premium enhanced bitrate formats
+        const rawQualityLabel = fmt.qualityLabel || '';
+        const isPremium = /premium/i.test(rawQualityLabel);
+
+        let quality = rawQualityLabel || fmt.quality || 'unknown';
         if (height > 0) {
           quality = `${height}p`;
           if (fmt.fps && fmt.fps > 30) quality += `${fmt.fps}`;
@@ -1120,6 +1124,7 @@ export class YouTubeExtractor extends BaseExtractor {
           audioTrackLang: fmt.audioTrack?.id?.split('.')[0] || null,
           audioTrackName: fmt.audioTrack?.displayName || null,
           audioIsDefault: fmt.audioTrack?.audioIsDefault || false,
+          isPremium,
           headers: formatDownloadHeaders
         });
       }
@@ -1270,7 +1275,11 @@ export class YouTubeExtractor extends BaseExtractor {
           else if (mimeType.includes('audio/webm')) ext = 'webm';
           else if (mimeType.includes('video/3gpp')) ext = '3gp';
 
-          let quality = fmt.qualityLabel || fmt.quality || 'unknown';
+          // Detect YouTube Premium enhanced bitrate formats
+          const rawQualityLabel = fmt.qualityLabel || '';
+          const isPremium = /premium/i.test(rawQualityLabel);
+
+          let quality = rawQualityLabel || fmt.quality || 'unknown';
           if (height > 0) {
             quality = `${height}p`;
             if (fmt.fps && fmt.fps > 30) quality += `${fmt.fps}`;
@@ -1301,6 +1310,7 @@ export class YouTubeExtractor extends BaseExtractor {
             fps: fmt.fps || null,
             vcodec: hasVideo ? (codecParts[0] || null) : null,
             acodec: hasAudio ? (codecParts[hasVideo ? 1 : 0] || null) : null,
+            isPremium,
             headers: pageDownloadHeaders
           });
         }

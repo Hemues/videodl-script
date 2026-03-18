@@ -6,6 +6,7 @@ A powerful CLI video downloader and converter with **21 built-in site extractors
 
 - **21 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, and more
 - **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
+- **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
 - **DASH merging** — automatically merges separate video + audio streams via ffmpeg
 - **HLS streaming** — downloads M3U8 / HLS streams with ffmpeg
 - **Subtitle support** — downloads, embeds, and auto-translates subtitles (YouTube)
@@ -345,6 +346,34 @@ videodl download --cookies path/to/cookies.txt "https://example.com/video"
 Cookies are saved to `cookies/cookies.txt` and reused automatically. Use `--generate-cookies` with download commands to auto-refresh expired cookies.
 
 > **Security:** Never commit `cookies/cookies.txt` or `logins/logins.txt` to git. They are excluded by `.gitignore`. Only the `.example` files are tracked.
+
+## YouTube Premium Enhanced Bitrate
+
+When a cookie file contains valid YouTube Premium session credentials, videodl automatically detects and prefers **enhanced bitrate** (Premium) formats. These formats provide significantly higher video bitrate at the same resolution — for example, a 1080p Premium stream may have 2–3× the bitrate of the standard 1080p stream, resulting in noticeably better visual quality.
+
+**How it works:**
+
+1. Provide a cookie file from a browser session where you are logged into a YouTube Premium account
+2. videodl detects formats marked as "Premium" by YouTube's API (`qualityLabel` contains "Premium")
+3. At the same resolution and codec, Premium formats are automatically preferred over standard ones
+
+**Usage:**
+
+```bash
+# Download with YouTube Premium cookies — Premium formats are selected automatically
+videodl download --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# List formats to see which ones are Premium (marked with ★)
+videodl download --list-formats --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+**Requirements:**
+
+- A valid YouTube Premium subscription on the account
+- Cookies exported from a browser session logged into that account
+- Premium formats are not available for all videos — only those where YouTube serves enhanced bitrate variants
+
+> **Note:** Without Premium cookies, standard formats are downloaded as usual. The feature is fully automatic — no additional CLI flags are needed.
 
 ## Programmatic API
 
