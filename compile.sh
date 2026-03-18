@@ -128,7 +128,40 @@ if ! grep -q "$SEA_SENTINEL" "$NODE_BIN" 2>/dev/null; then
         echo "  Using cached $OFFICIAL_NODE"
     fi
 fi
+# --- Auto-increment version -------------------------------------------------- 
 
+step 'Version management'
+
+if ! command -v gh &>/dev/null; then
+    error 'GitHub CLI (gh) not found. Install from https://cli.github.com'
+fi
+
+# Query latest release from both repos to find the highest version
+CLI_TAG=$(gh release view --repo Hemues/videodl-script --json tagName -q '.tagName' 2>/dev/null || echo "v0.0.0")
+CONTAINER_TAG=$(gh release view --repo Hemues/videodl-container --json tagName -q '.tagName' 2>/dev/null || echo "v0.0.0")
+
+CLI_VER="${CLI_TAG#v}"
+CONTAINER_VER="${CONTAINER_TAG#v}"
+echo "  videodl-script  latest: $CLI_VER"
+echo "  videodl-container latest: $CONTAINER_VER"
+
+# Take the highest version across both repos
+HIGHEST=$(printf '%s\n%s\n' "$CLI_VER" "$CONTAINER_VER" | sort -V | tail -1)
+echo "  Highest version: $HIGHEST"
+
+# Increment patch (+0.01, e.g. 1.5.92 -> 1.5.93)
+IFS='.' read -r MAJOR MINOR PATCH <<< "$HIGHEST"
+PATCH=$((PATCH + 1))
+NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+# Update package.json with new version
+node -e "
+const fs = require('fs');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+pkg.version = '${NEW_VERSION}';
+fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+"
+echo "  New version: $NEW_VERSION"
 # --- Install dependencies ----------------------------------------------------
 
 if [ ! -d "$PROJECT_ROOT/node_modules" ]; then
@@ -200,6 +233,32 @@ if [ -d "$DIST_DIR" ]; then
         fi
         printf '  %-35s %s\n' "$name" "$size"
     done
+fi
+
+echo ''
+echo "  Version: $NEW_VERSION"
+echo ''
+
+# --- Create GitHub release ----------------------------------------------------
+
+step 'Creating GitHub release'
+
+RELEASE_FILES=""
+for f in dist/videodl-linux dist/videodl-ffmpeg-linux dist/videodl.exe dist/videodl-ffmpeg.exe; do
+    if [ -f "$f" ]; then
+        RELEASE_FILES="$RELEASE_FILES $f"
+    fi
+done
+
+if [ -z "$RELEASE_FILES" ]; then
+    echo "  ⚠ No release artifacts found in dist/"
+else
+    echo "  Artifacts:$RELEASE_FILES"
+    gh release create "v${NEW_VERSION}" $RELEASE_FILES \
+        --repo Hemues/videodl-script \
+        --title "Videodl cli (Build ${NEW_VERSION})" \
+        --notes "Release ${NEW_VERSION}"
+    echo "  ✓ Release v${NEW_VERSION} created"
 fi
 
 echo ''
