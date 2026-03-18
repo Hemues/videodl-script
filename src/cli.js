@@ -923,7 +923,7 @@ function formatDuration(seconds) {
  * Each message is a single JSON object on its own line.
  */
 function jsonLine(obj) {
-  process.stdout.write(JSON.stringify(obj) + '\n');
+  fs.writeSync(1, JSON.stringify(obj) + '\n');
 }
 
 // Extract command — output video info as JSON for programmatic use
@@ -1163,7 +1163,7 @@ program
           jsonLine({ status: 'error', msg: cfErr.message });
           process.exit(1);
         }
-        return;
+        process.exit(0);
       }
 
       // Resolve subtitles (shared by all download methods)
@@ -1240,6 +1240,7 @@ program
           rejectUnauthorized: options.sslVerify, cookies,
         });
       }
+      process.exit(0);
     } catch (error) {
       jsonLine({ status: 'error', msg: error.message });
       process.exit(1);
