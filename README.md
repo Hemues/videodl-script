@@ -355,7 +355,27 @@ When a cookie file contains valid YouTube Premium session credentials, videodl a
 
 1. Provide a cookie file from a browser session where you are logged into a YouTube Premium account
 2. videodl detects formats marked as "Premium" by YouTube's API (`qualityLabel` contains "Premium")
-3. At the same resolution and codec, Premium formats are automatically preferred over standard ones
+3. When Premium formats are available, videodl automatically **upgrades** the resolution — for example, requesting 720p will download **1080p Premium** if available, giving you the best possible quality
+4. If no Premium formats are found at or above the requested resolution, the standard format at the requested quality is used
+
+**Premium upgrade logic:**
+
+| Requested | Available Premium | Result |
+|-----------|------------------|--------|
+| 720p | 1080p Premium, 720p Premium | **1080p Premium** (best Premium) |
+| 720p | 720p Premium only | **720p Premium** |
+| 1080p | 1080p Premium | **1080p Premium** |
+| 720p | _(none — session expired)_ | 720p standard + warning |
+
+**Expired cookie detection:**
+
+videodl automatically detects when YouTube session cookies have expired (`LOGGED_IN=false`). When this happens:
+
+- If `--generate-cookies` is set and a login entry exists → cookie refresh is attempted, then re-extraction
+- Otherwise → a warning is logged (`YouTube session expired — Premium formats unavailable`) and the download continues with standard formats
+- The `__Secure-1PSID` cookie expiry is also checked before extraction begins
+
+> **Tip:** YouTube login cannot be automated (Google's anti-bot protection). When cookies expire, re-export them manually from your browser using an extension like "Get cookies.txt LOCALLY".
 
 **Usage:**
 
@@ -365,6 +385,9 @@ videodl download --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=
 
 # List formats to see which ones are Premium (marked with ★)
 videodl download --list-formats --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Auto-attempt cookie refresh if expired (requires logins.txt)
+videodl download --cookies cookies/cookies.txt --generate-cookies "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 **Requirements:**

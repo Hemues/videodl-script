@@ -175,6 +175,36 @@ program
         videoInfo = await extractVideoInfo(url, { cookies });
         console.log(chalk.green(`✓ Found: ${videoInfo.title}`));
         console.log(chalk.gray(`  Extractor: ${videoInfo.extractor}`));
+
+        // Check if session is expired and no Premium formats — try cookie refresh
+        const hasPremium = videoInfo.formats.some(f => f.isPremium);
+        if (!hasPremium && videoInfo.sessionExpired && cookies) {
+          const loginFileExists = fs.existsSync(path.resolve(loginFile));
+          if ((options.generateCookies || forceRegen) && loginFileExists) {
+            console.log(chalk.yellow(`🔄 Session expired, no Premium formats — attempting cookie refresh...`));
+            try {
+              const genResult = await generateCookies(loginFile, cookieFile, {
+                onlyIfExpired: false,
+                verbose: false,
+                headless: options.headless !== false,
+                captchaProvider: options.captchaProvider,
+                captchaKey: options.captchaKey,
+              });
+              if (genResult.succeeded > 0) {
+                cookies = parseCookieFile(cookieFile);
+                console.log(chalk.green(`✓ Cookies refreshed — re-extracting...`));
+                videoInfo = await extractVideoInfo(url, { cookies });
+                console.log(chalk.green(`✓ Found: ${videoInfo.title}`));
+              } else {
+                console.log(chalk.yellow(`⚠ Cookie refresh failed — continuing with standard formats`));
+              }
+            } catch (refreshErr) {
+              console.log(chalk.yellow(`⚠ Cookie refresh failed: ${refreshErr.message}`));
+            }
+          } else if (cookies) {
+            console.log(chalk.yellow(`⚠ YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.`));
+          }
+        }
         
         // List formats if requested
         if (options.listFormats) {
@@ -1047,6 +1077,14 @@ program
       try {
         videoInfo = await extractVideoInfo(url, { cookies });
         jsonLine({ status: 'extracted', title: videoInfo.title, id: videoInfo.id || '' });
+
+        // Warn if session expired — Premium formats unavailable
+        if (videoInfo.sessionExpired && cookies) {
+          const hasPremium = videoInfo.formats.some(f => f.isPremium);
+          if (!hasPremium) {
+            jsonLine({ status: 'warning', msg: 'YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.' });
+          }
+        }
 
         const extractor = getExtractor(url);
         formatPair = extractor.selectFormatPair(videoInfo.formats, options.format, options.audioLang || null);

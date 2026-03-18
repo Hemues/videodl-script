@@ -291,7 +291,10 @@ export class YouTubeExtractor extends BaseExtractor {
     const m = html.match(/"DATASYNC_ID"\s*:\s*"([^"]*)"/) ||
               html.match(/datasyncId\s*:\s*"([^"]*)"/);
     if (!m) return null;
-    // Format is typically "number||" — extract the numeric part
+    // Format is typically "<id>||" — extract the part before the pipes.
+    // Only numeric IDs represent real user sessions; IDs starting with 'V'
+    // (e.g. "V70cc6223||") are visitor sessions and must NOT be used for
+    // onBehalfOfUser — doing so causes 401 Unauthorized on all API clients.
     const match = m[1].match(/^(\d+)/);
     return match ? match[1] : null;
   }
@@ -384,13 +387,18 @@ export class YouTubeExtractor extends BaseExtractor {
     // Required for YouTube to treat API calls as authenticated even when
     // cookies are present.  Without this, YouTube serves preview/stub content
     // for restricted videos (live replays, members-only, age-gated, etc.).
-    const sapisidHash = this._generateSapisidHash('https://www.youtube.com');
-    if (sapisidHash) {
-      headers['Authorization'] = sapisidHash;
-      headers['X-Goog-AuthUser'] = '0';
-      headers['X-Origin'] = 'https://www.youtube.com';
-      if (this._datasyncId) {
-        headers['X-Goog-PageId'] = this._datasyncId;
+    // Only send auth when YouTube confirmed a valid session (LOGGED_IN=true).
+    // With incomplete cookies (LOGGED_IN=false), sending SAPISIDHASH causes
+    // hard 401 Unauthorized on ALL clients instead of graceful fallbacks.
+    if (this._isLoggedIn) {
+      const sapisidHash = this._generateSapisidHash('https://www.youtube.com');
+      if (sapisidHash) {
+        headers['Authorization'] = sapisidHash;
+        headers['X-Goog-AuthUser'] = '0';
+        headers['X-Origin'] = 'https://www.youtube.com';
+        if (this._datasyncId) {
+          headers['X-Goog-PageId'] = this._datasyncId;
+        }
       }
     }
 
@@ -413,6 +421,7 @@ export class YouTubeExtractor extends BaseExtractor {
    * @param {Set<string>} [skipClients] - client names to skip (already tried)
    */
   async _getFormatsFromApi(videoId, sts, visitorData, skipClients = new Set()) {
+    this._lastApiAll401 = true; // assume all 401 until we see a non-401 response
     for (const clientConfig of INNERTUBE_CLIENTS) {
       if (skipClients.has(clientConfig.name)) continue;
       // Mark client as tried immediately — prevents re-trying failed clients
@@ -422,6 +431,7 @@ export class YouTubeExtractor extends BaseExtractor {
       try {
         console.log(`[${this.name}] Trying ${clientConfig.name} client...`);
         const response = await this._callPlayerApi(videoId, clientConfig, sts, visitorData);
+        this._lastApiAll401 = false; // got a non-error response
 
         const sd = response.streamingData;
         if (!sd) {
@@ -464,6 +474,8 @@ export class YouTubeExtractor extends BaseExtractor {
 
         return { formats: allFormats, clientName: clientConfig.name, clientConfig, requiresJs: clientConfig.requiresJs, poToken, hlsManifestUrl };
       } catch (e) {
+        const is401 = /401|Unauthorized/i.test(e.message);
+        if (!is401) this._lastApiAll401 = false;
         console.log(`[${this.name}] ${clientConfig.name} failed: ${e.message}`);
       }
     }
@@ -719,7 +731,14 @@ export class YouTubeExtractor extends BaseExtractor {
 
     console.log(`[${this.name}] Solving ${uncachedSigLengths.length} sig + ${uncachedNValues.length} n challenges...`);
 
-    const result = solver({ type: 'player', player: playerJS, requests });
+    let result;
+    try {
+      result = solver({ type: 'player', player: playerJS, requests });
+    } catch (solverErr) {
+      // Solver may throw raw strings, not Error objects
+      const msg = solverErr instanceof Error ? solverErr.message : String(solverErr);
+      throw new Error(`Challenge solver failed: ${msg}`);
+    }
 
     if (result.type === 'error') {
       throw new Error(`Solver error: ${result.error}`);
@@ -965,6 +984,25 @@ export class YouTubeExtractor extends BaseExtractor {
       console.log(`[${this.name}] Warning: Cookies loaded but no SAPISID/__Secure-3PAPISID found — API calls will be unauthenticated`);
     }
 
+    // Check LOGGED_IN status from page — warns when cookies are stale or incomplete
+    const loggedInMatch = html.match(/"LOGGED_IN"\s*:\s*(true|false)/);
+    this._isLoggedIn = loggedInMatch ? loggedInMatch[1] === 'true' : false;
+    this._sessionExpired = false;
+    if (!this._isLoggedIn && this._cookieHeader) {
+      this._sessionExpired = true;
+      // Check which critical cookies are missing
+      const criticalNames = ['HSID', 'SSID', '__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO'];
+      const missing = criticalNames.filter(name => !this._cookies.find(c => c.name === name));
+      if (missing.length > 0) {
+        console.log(`[${this.name}] ⚠ YouTube says LOGGED_IN=false — missing critical cookies: ${missing.join(', ')}`);
+        console.log(`[${this.name}]   Premium formats require a complete cookie export. Re-export ALL cookies from your browser while logged in.`);
+      } else {
+        console.log(`[${this.name}] ⚠ YouTube says LOGGED_IN=false — session may have expired. Re-export cookies from your browser.`);
+      }
+    } else if (this._isLoggedIn) {
+      console.log(`[${this.name}] ✓ Authenticated session (LOGGED_IN=true)`);
+    }
+
     // Expected video duration from page metadata (used for probe validation)
     const videoDetails = pagePlayerResponse?.videoDetails || {};
     const expectedDuration = videoDetails.lengthSeconds ? parseInt(videoDetails.lengthSeconds) : 0;
@@ -987,7 +1025,20 @@ export class YouTubeExtractor extends BaseExtractor {
     while (triedClients.size < INNERTUBE_CLIENTS.length) {
       // 5. Get formats from next untried client
       const apiResult = await this._getFormatsFromApi(videoId, sts, visitorData, triedClients);
-      if (!apiResult) break; // all clients exhausted
+      if (!apiResult) {
+        // If every single API client returned 401 and we were sending SAPISIDHASH,
+        // the auth is being rejected (stale PSIDTS, missing runtime Set-Cookie,
+        // etc.).  Retry ALL clients without auth so IOS/HLS fallback can work.
+        if (this._lastApiAll401 && this._isLoggedIn) {
+          console.log(`[${this.name}] All API clients returned 401 with auth — retrying without SAPISIDHASH`);
+          this._isLoggedIn = false;
+          this._sessionExpired = true;
+          this._datasyncId = null;
+          triedClients.clear();
+          continue;
+        }
+        break; // all clients exhausted
+      }
 
       const { formats: rawFormats, clientName: cName, clientConfig: cConfig, poToken, hlsManifestUrl: hlsUrl } = apiResult;
       if (hlsUrl && !hlsManifestUrl) hlsManifestUrl = hlsUrl;  // Keep first HLS URL
@@ -1027,7 +1078,12 @@ export class YouTubeExtractor extends BaseExtractor {
 
       // 7. Solve challenges if needed
       if (sigLengthsSet.size > 0 || nValuesSet.size > 0) {
-        await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+        try {
+          await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+        } catch (solverErr) {
+          console.warn(`[${this.name}] ${cName}: Challenge solver failed — skipping client: ${solverErr.message}`);
+          continue;
+        }
       }
 
       const cache = this._playerCache.get(playerUrl);
@@ -1228,7 +1284,12 @@ export class YouTubeExtractor extends BaseExtractor {
         }
 
         if (sigLengthsSet.size > 0 || nValuesSet.size > 0) {
-          await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+          try {
+            await this._solveAllChallenges(playerUrl, playerJS, [...sigLengthsSet], [...nValuesSet]);
+          } catch (solverErr) {
+            console.warn(`[${this.name}] PAGE: Challenge solver failed — skipping page formats: ${solverErr.message}`);
+            // Fall through to HLS
+          }
         }
 
         const cache = this._playerCache.get(playerUrl);
@@ -1468,7 +1529,8 @@ export class YouTubeExtractor extends BaseExtractor {
       uploader: videoDetails2.author || null,
       thumbnail: videoDetails2.thumbnail?.thumbnails?.at(-1)?.url || null,
       subtitles: subtitles || null,
-      translationLanguages: translationLanguages || null
+      translationLanguages: translationLanguages || null,
+      sessionExpired: this._sessionExpired || false
     };
   }
 }
