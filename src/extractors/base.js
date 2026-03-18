@@ -38,11 +38,15 @@ export class BaseExtractor {
       throw new Error('No formats available');
     }
 
-    // Sort by resolution/quality
+    // Sort by resolution/quality, prefer premium (enhanced bitrate) at same height
     const sortedFormats = [...formats].sort((a, b) => {
       const heightA = a.height || 0;
       const heightB = b.height || 0;
-      return heightB - heightA; // Descending order
+      if (heightB !== heightA) return heightB - heightA; // Descending order
+      // Same height: prefer premium (enhanced bitrate)
+      if (a.isPremium && !b.isPremium) return -1;
+      if (!a.isPremium && b.isPremium) return 1;
+      return 0;
     });
 
     // Default: try 720p first, fall back to best (highest) if not available
@@ -104,13 +108,16 @@ export class BaseExtractor {
       return 2; // avc1 / H.264
     };
 
-    // Sort video: height descending → prefer AV1 → then by filesize ascending
+    // Sort video: height descending → prefer AV1 → prefer premium (enhanced bitrate) → then by filesize ascending
     const sortedVideo = [...videoOnly].sort((a, b) => {
       if ((b.height || 0) !== (a.height || 0)) return (b.height || 0) - (a.height || 0);
       // At same height, prefer most efficient codec
       const cr = codecRank(a) - codecRank(b);
       if (cr !== 0) return cr;
-      // Same codec + height: prefer smallest file
+      // Same codec + height: prefer premium (enhanced bitrate) over standard
+      if (a.isPremium && !b.isPremium) return -1;
+      if (!a.isPremium && b.isPremium) return 1;
+      // Same codec + height + premium tier: prefer smallest file
       if (a.filesize && b.filesize) return a.filesize - b.filesize;
       return 0;
     });
@@ -206,6 +213,10 @@ export class BaseExtractor {
 
     if (hasMultipleLangs) {
       console.log(`[FormatPair] Detected ${audioByLang.size} audio languages: ${[...audioByLang.keys()].join(', ')} → selected ${audioTracks.length} track(s)`);
+    }
+
+    if (selectedVideo.isPremium) {
+      console.log(`[FormatPair] ★ Premium enhanced bitrate: ${selectedVideo.quality} ${selectedVideo.vcodec || ''} (${selectedVideo.bitrate ? Math.round(selectedVideo.bitrate / 1000) + 'k' : 'unknown bitrate'})`);
     }
 
     const selectedAudio = audioTracks[0]; // primary track for backward compat
