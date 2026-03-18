@@ -16,6 +16,12 @@ import {
   AUTH_COOKIE_NAME as BRAZZERS_AUTH_COOKIE,
 } from './brazzers/index.js';
 
+import {
+  YouTubeCookieExtractor,
+  URL_PATTERN as YOUTUBE_PATTERN,
+  AUTH_COOKIE_NAME as YOUTUBE_AUTH_COOKIE,
+} from './youtube.js';
+
 /**
  * Registry of cookie extractors.
  * Each entry: { pattern, handler, authCookieName, name }
@@ -26,6 +32,12 @@ const COOKIE_EXTRACTORS = [
     pattern: BRAZZERS_PATTERN,
     handler: new BrazzersCookieExtractor(),
     authCookieName: BRAZZERS_AUTH_COOKIE,
+  },
+  {
+    name: 'YouTube',
+    pattern: YOUTUBE_PATTERN,
+    handler: new YouTubeCookieExtractor(),
+    authCookieName: YOUTUBE_AUTH_COOKIE,
   },
 ];
 

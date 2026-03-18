@@ -49,6 +49,20 @@ export class BaseExtractor {
       return 0;
     });
 
+    // Premium upgrade: if Premium formats exist at or above the target resolution,
+    // pick the best (highest-res) Premium instead of standard at the requested quality.
+    const targetHeight = quality === 'default' ? 720
+      : quality === 'best' || quality === 'worst' ? 0
+      : parseInt((quality.match(/(\d+)/) || [])[1]) || 0;
+
+    if (quality !== 'worst' && targetHeight > 0) {
+      const premiumAbove = sortedFormats.filter(f => f.isPremium && (f.height || 0) >= targetHeight);
+      if (premiumAbove.length > 0) {
+        console.log(`[Format] \u2605 Premium upgrade: ${premiumAbove[0].height}p Premium (requested ${targetHeight}p)`);
+        return premiumAbove[0];
+      }
+    }
+
     // Default: try 720p first, fall back to best (highest) if not available
     if (quality === 'default') {
       const match720 = sortedFormats.find(f => f.height === 720);
@@ -66,17 +80,14 @@ export class BaseExtractor {
     // Match specific quality (e.g., '720p', '1080p')
     const qualityMatch = quality.match(/(\d+)p?/);
     if (qualityMatch) {
-      const targetHeight = parseInt(qualityMatch[1]);
-      const exactMatch = sortedFormats.find(f => f.height === targetHeight);
+      const reqHeight = parseInt(qualityMatch[1]);
+      const exactMatch = sortedFormats.find(f => f.height === reqHeight);
       if (exactMatch) return exactMatch;
 
       // No exact match — prefer the next HIGHER quality, fall back to lower
-      // sortedFormats is descending by height, so walk from lowest to highest
-      // and pick the first one that is >= target.
       const ascending = [...sortedFormats].reverse();
-      const higher = ascending.find(f => (f.height || 0) >= targetHeight);
+      const higher = ascending.find(f => (f.height || 0) >= reqHeight);
       if (higher) return higher;
-      // Nothing higher exists — pick highest available (first in descending)
       return sortedFormats[0];
     }
 
@@ -123,29 +134,41 @@ export class BaseExtractor {
     });
 
     let selectedVideo;
-    if (quality === 'default') {
-      // Default: try 720p first, fall back to best (highest) if not available
-      selectedVideo = sortedVideo.find(f => f.height === 720) || sortedVideo[0];
-    } else if (quality === 'best') {
-      selectedVideo = sortedVideo[0];
-    } else if (quality === 'worst') {
-      selectedVideo = sortedVideo[sortedVideo.length - 1];
-    } else {
-      const targetHeight = parseInt(quality);
-      if (targetHeight) {
-        selectedVideo = sortedVideo.find(f => f.height === targetHeight);
-        if (!selectedVideo) {
-          // No exact match — prefer the next HIGHER quality, fall back to lower
-          // sortedVideo is descending by height
-          const ascending = [...sortedVideo].reverse();
-          selectedVideo = ascending.find(f => (f.height || 0) >= targetHeight);
-          if (!selectedVideo) {
-            // Nothing higher exists — pick highest available
-            selectedVideo = sortedVideo[0];
-          }
-        }
-      } else {
+
+    // Premium upgrade: when Premium video formats exist at or above the
+    // requested resolution, automatically pick the best (highest-res) Premium
+    // format.  For example, requesting 720p will select 1080p Premium if available.
+    const targetHeight = quality === 'default' ? 720
+      : quality === 'best' || quality === 'worst' ? 0
+      : parseInt(quality) || 0;
+
+    if (quality !== 'worst' && targetHeight > 0) {
+      const premiumVideos = sortedVideo.filter(f => f.isPremium && (f.height || 0) >= targetHeight);
+      if (premiumVideos.length > 0) {
+        selectedVideo = premiumVideos[0]; // sortedVideo order preserved: highest-res + best codec first
+        console.log(`[FormatPair] \u2605 Premium upgrade: ${selectedVideo.height}p Premium (requested ${targetHeight}p)`);
+      }
+    }
+
+    if (!selectedVideo) {
+      if (quality === 'default') {
+        selectedVideo = sortedVideo.find(f => f.height === 720) || sortedVideo[0];
+      } else if (quality === 'best') {
         selectedVideo = sortedVideo[0];
+      } else if (quality === 'worst') {
+        selectedVideo = sortedVideo[sortedVideo.length - 1];
+      } else {
+        const reqHeight = parseInt(quality);
+        if (reqHeight) {
+          selectedVideo = sortedVideo.find(f => f.height === reqHeight);
+          if (!selectedVideo) {
+            const ascending = [...sortedVideo].reverse();
+            selectedVideo = ascending.find(f => (f.height || 0) >= reqHeight);
+            if (!selectedVideo) selectedVideo = sortedVideo[0];
+          }
+        } else {
+          selectedVideo = sortedVideo[0];
+        }
       }
     }
 
