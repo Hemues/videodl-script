@@ -1182,7 +1182,7 @@ export class VideoDownloader extends EventEmitter {
     return new Promise((resolve, reject) => {
       const args = [
         '-loglevel', 'warning',
-        '-stats'
+        '-progress', 'pipe:2'
       ];
       
       // Add cookies for ffmpeg (must be before -i)
@@ -1263,7 +1263,7 @@ export class VideoDownloader extends EventEmitter {
 
       const ffmpeg = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
-      let duration = 0;
+      let duration = options.duration || 0;
       let totalSize = 0;
       let stderrOutput = '';
 
@@ -1272,12 +1272,12 @@ export class VideoDownloader extends EventEmitter {
         const output = data.toString();
         stderrOutput += output;
         
-        // Log errors
-        if (output.includes('error') || output.includes('Error') || output.includes('Invalid')) {
+        // Log errors (but skip progress key-value lines)
+        if ((output.includes('error') || output.includes('Error') || output.includes('Invalid')) && !output.startsWith('progress=')) {
           console.error(`[ffmpeg] ${output.trim()}`);
         }
         
-        // Parse duration from ffmpeg output
+        // Parse duration from ffmpeg initial output
         const durationMatch = output.match(/Duration: (\d{2}):(\d{2}):(\d{2})/);
         if (durationMatch && !duration) {
           const hours = parseInt(durationMatch[1]);
@@ -1286,26 +1286,50 @@ export class VideoDownloader extends EventEmitter {
           duration = hours * 3600 + minutes * 60 + seconds;
         }
         
-        // Parse current time for progress
-        const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
-        if (timeMatch && duration > 0) {
-          const hours = parseInt(timeMatch[1]);
-          const minutes = parseInt(timeMatch[2]);
-          const seconds = parseInt(timeMatch[3]);
+        // Parse -progress pipe:2 key-value pairs (modern ffmpeg)
+        // Format: out_time=HH:MM:SS.MMMMMM, total_size=BYTES, progress=continue/end
+        const outTimeMatch = output.match(/out_time=(\d{2}):(\d{2}):(\d{2})/);
+        if (outTimeMatch) {
+          const hours = parseInt(outTimeMatch[1]);
+          const minutes = parseInt(outTimeMatch[2]);
+          const seconds = parseInt(outTimeMatch[3]);
           const currentTime = hours * 3600 + minutes * 60 + seconds;
-          
-          const percent = Math.min(100, (currentTime / duration) * 100);
-          this.emit('progress', {
-            downloaded: currentTime,
-            total: duration,
-            percent: percent
-          });
+          if (duration > 0) {
+            const percent = Math.min(100, (currentTime / duration) * 100);
+            // Extract total_size from the same progress report
+            const sizeMatchNew = output.match(/total_size=(\d+)/);
+            if (sizeMatchNew) {
+              totalSize = parseInt(sizeMatchNew[1]);
+            }
+            this.emit('progress', {
+              downloaded: totalSize || 0,
+              total: 0,
+              percent: percent,
+              isHLS: true,
+            });
+          }
         }
-        
-        // Parse size
-        const sizeMatch = output.match(/size=\s*(\d+)kB/);
-        if (sizeMatch) {
-          totalSize = parseInt(sizeMatch[1]) * 1024;
+
+        // Fallback: legacy -stats format (older ffmpeg versions)
+        if (!outTimeMatch) {
+          const sizeMatch = output.match(/size=\s*(\d+)kB/);
+          if (sizeMatch) {
+            totalSize = parseInt(sizeMatch[1]) * 1024;
+          }
+          const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
+          if (timeMatch && duration > 0) {
+            const hours = parseInt(timeMatch[1]);
+            const minutes = parseInt(timeMatch[2]);
+            const seconds = parseInt(timeMatch[3]);
+            const currentTime = hours * 3600 + minutes * 60 + seconds;
+            const percent = Math.min(100, (currentTime / duration) * 100);
+            this.emit('progress', {
+              downloaded: totalSize || 0,
+              total: 0,
+              percent: percent,
+              isHLS: true,
+            });
+          }
         }
       });
 

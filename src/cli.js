@@ -1070,14 +1070,43 @@ program
       // Throttle progress updates to max ~2/second
       let lastProgressTime = 0;
       const PROGRESS_THROTTLE = 500;
+      let downloadStartTime = 0;
+      let lastDownloaded = 0;
+      let lastSpeedTime = 0;
+      let currentSpeed = 0;
 
       downloader.on('start', ({ filepath }) => {
+        downloadStartTime = Date.now();
+        lastSpeedTime = downloadStartTime;
+        lastDownloaded = 0;
         jsonLine({ status: 'downloading', msg: `Saving to: ${filepath}`, filename: filepath });
       });
 
-      downloader.on('progress', ({ downloaded, total, percent }) => {
+      downloader.on('progress', ({ downloaded, total, percent, isHLS }) => {
         const now = Date.now();
         if (now - lastProgressTime >= PROGRESS_THROTTLE) {
+          // Calculate speed (bytes/sec) using interval since last update
+          const elapsed = (now - lastSpeedTime) / 1000;
+          if (elapsed > 0 && downloaded > lastDownloaded) {
+            currentSpeed = (downloaded - lastDownloaded) / elapsed;
+          }
+          lastDownloaded = downloaded;
+          lastSpeedTime = now;
+
+          // Calculate ETA
+          let eta = null;
+          if (isHLS && percent > 0) {
+            // HLS: total file size unknown, estimate ETA from percent and elapsed wall time
+            const totalElapsed = (now - downloadStartTime) / 1000;
+            if (totalElapsed > 0) {
+              eta = Math.round((totalElapsed / percent) * (100 - percent));
+            }
+          } else if (total > 0 && currentSpeed > 0) {
+            // DASH/direct: byte-based ETA
+            const remaining = total - downloaded;
+            eta = Math.round(remaining / currentSpeed);
+          }
+
           lastProgressTime = now;
           jsonLine({
             status: 'downloading',
@@ -1085,8 +1114,8 @@ program
             total_bytes: total,
             total_bytes_estimate: total,
             percent: percent,
-            speed: null,
-            eta: null,
+            speed: currentSpeed > 0 ? currentSpeed : null,
+            eta: eta !== null ? Math.round(eta) : null,
           });
         }
       });
@@ -1116,8 +1145,16 @@ program
             onProgress: (downloaded, total) => {
               const now = Date.now();
               if (now - lastProgressTime >= PROGRESS_THROTTLE) {
+                const elapsed = (now - lastSpeedTime) / 1000;
+                if (elapsed > 0) {
+                  currentSpeed = (downloaded - lastDownloaded) / elapsed;
+                }
+                lastDownloaded = downloaded;
+                lastSpeedTime = now;
+                const remaining = total > 0 ? total - downloaded : 0;
+                const eta = currentSpeed > 0 ? remaining / currentSpeed : null;
                 lastProgressTime = now;
-                jsonLine({ status: 'downloading', downloaded_bytes: downloaded, total_bytes: total, percent: total > 0 ? (downloaded / total * 100) : 0 });
+                jsonLine({ status: 'downloading', downloaded_bytes: downloaded, total_bytes: total, percent: total > 0 ? (downloaded / total * 100) : 0, speed: currentSpeed > 0 ? currentSpeed : null, eta: eta !== null ? Math.round(eta) : null });
               }
             }
           });
@@ -1166,6 +1203,7 @@ program
           filename, directory: options.directory,
           formatHeaders: formatPair.video.headers,
           rejectUnauthorized: options.sslVerify, cookies,
+          duration: videoInfo.duration || 0,
           subtitles: subtitleDownloads.length > 0 ? subtitleDownloads : undefined,
         };
         if (formatPair._hlsAudioUrls) {
@@ -1191,6 +1229,7 @@ program
           url: selectedFormat.url, filename, directory: options.directory,
           headers: options.header, formatHeaders: selectedFormat.headers,
           rejectUnauthorized: options.sslVerify, cookies,
+          duration: videoInfo.duration || 0,
         };
         if (selectedFormat._hlsPlaylist) dlOpts.hlsPlaylist = selectedFormat._hlsPlaylist;
         await downloader.downloadHLS(dlOpts);
