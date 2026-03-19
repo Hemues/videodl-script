@@ -835,6 +835,162 @@ export class YouTubeExtractor extends BaseExtractor {
     }
   }
 
+  // ========== Playlist / Channel ==========
+
+  /**
+   * Extract video entries from a YouTube playlist or channel URL.
+   * Uses the YouTube browse API (via ytInitialData) to fetch the full list.
+   */
+  async _extractPlaylist(url, options) {
+    console.log(`[${this.name}] Handling as playlist/channel URL`);
+
+    const pageHeaders = { ...YT_HEADERS };
+    if (this._cookieHeader) pageHeaders['Cookie'] = this._cookieHeader;
+
+    const response = await got(url, {
+      headers: pageHeaders,
+      timeout: { request: 30000 },
+      followRedirect: true,
+    });
+    const html = response.body;
+
+    // Extract ytInitialData
+    const dataMatch = html.match(/var\s+ytInitialData\s*=\s*(\{.+?\})\s*;/s) ||
+                      html.match(/ytInitialData\s*=\s*(\{.+?\})\s*;/s);
+    if (!dataMatch) throw new Error('Could not parse YouTube playlist page');
+
+    let initialData;
+    try { initialData = JSON.parse(dataMatch[1]); } catch {
+      throw new Error('Failed to parse YouTube playlist data');
+    }
+
+    // Try playlist tab content (for /playlist?list= URLs)
+    let playlistTitle = null;
+    let videoItems = [];
+
+    // Path 1: Playlist page (/playlist?list=...)
+    const playlistHeader = initialData?.header?.playlistHeaderRenderer;
+    if (playlistHeader) {
+      playlistTitle = playlistHeader.title?.simpleText || null;
+    }
+
+    const tabContents = initialData?.contents?.twoColumnBrowseResultsRenderer?.tabs;
+    if (tabContents) {
+      for (const tab of tabContents) {
+        const tabRenderer = tab?.tabRenderer;
+        if (!tabRenderer?.content) continue;
+
+        // Playlist page: sectionListRenderer → itemSectionRenderer → playlistVideoListRenderer
+        const sections = tabRenderer.content?.sectionListRenderer?.contents;
+        if (sections) {
+          for (const section of sections) {
+            const items = section?.itemSectionRenderer?.contents;
+            if (!items) continue;
+            for (const item of items) {
+              const plRenderer = item?.playlistVideoListRenderer;
+              if (plRenderer?.contents) {
+                for (const vid of plRenderer.contents) {
+                  const r = vid?.playlistVideoRenderer;
+                  if (r?.videoId) {
+                    videoItems.push({
+                      _type: 'video',
+                      id: r.videoId,
+                      title: r.title?.runs?.[0]?.text || `Video ${r.videoId}`,
+                      url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      webpage_url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      duration: this._parseDuration(r.lengthText?.simpleText),
+                      extractor: this.name,
+                    });
+                  }
+                }
+              }
+
+              // Channel videos tab: gridRenderer or richGridRenderer
+              const gridRenderer = item?.gridRenderer;
+              if (gridRenderer?.items) {
+                for (const gi of gridRenderer.items) {
+                  const r = gi?.gridVideoRenderer;
+                  if (r?.videoId) {
+                    videoItems.push({
+                      _type: 'video',
+                      id: r.videoId,
+                      title: r.title?.runs?.[0]?.text || r.title?.simpleText || `Video ${r.videoId}`,
+                      url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      webpage_url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      duration: this._parseDuration(r.thumbnailOverlays?.[0]?.thumbnailOverlayTimeStatusRenderer?.text?.simpleText),
+                      extractor: this.name,
+                    });
+                  }
+                }
+              }
+
+              // Rich grid (channel pages, newer layout)
+              const richGrid = item?.richGridRenderer;
+              if (richGrid?.contents) {
+                for (const ri of richGrid.contents) {
+                  const r = ri?.richItemRenderer?.content?.videoRenderer;
+                  if (r?.videoId) {
+                    videoItems.push({
+                      _type: 'video',
+                      id: r.videoId,
+                      title: r.title?.runs?.[0]?.text || `Video ${r.videoId}`,
+                      url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      webpage_url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                      duration: this._parseDuration(r.lengthText?.simpleText),
+                      extractor: this.name,
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Channel page: richGridRenderer directly under tab content
+        const richGrid = tabRenderer.content?.richGridRenderer;
+        if (richGrid?.contents) {
+          for (const ri of richGrid.contents) {
+            const r = ri?.richItemRenderer?.content?.videoRenderer;
+            if (r?.videoId) {
+              videoItems.push({
+                _type: 'video',
+                id: r.videoId,
+                title: r.title?.runs?.[0]?.text || `Video ${r.videoId}`,
+                url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                webpage_url: `https://www.youtube.com/watch?v=${r.videoId}`,
+                duration: this._parseDuration(r.lengthText?.simpleText),
+                extractor: this.name,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: try to get channel/playlist title from metadata
+    if (!playlistTitle) {
+      const metadata = initialData?.metadata?.channelMetadataRenderer ||
+                       initialData?.metadata?.playlistMetadataRenderer;
+      playlistTitle = metadata?.title || null;
+    }
+    if (!playlistTitle) {
+      const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+      if (ogTitle) playlistTitle = this._decodeHtmlEntities(ogTitle[1]);
+    }
+    if (!playlistTitle) playlistTitle = 'YouTube Playlist';
+
+    if (videoItems.length === 0) throw new Error('No videos found in playlist/channel');
+    console.log(`[${this.name}] Found ${videoItems.length} video(s) in "${playlistTitle}"`);
+
+    return {
+      _type: 'playlist',
+      title: playlistTitle,
+      entries: videoItems,
+      extractor: this.name,
+      url,
+    };
+  }
+
   // ========== Search ==========
 
   /**
@@ -928,6 +1084,24 @@ export class YouTubeExtractor extends BaseExtractor {
     // Handle search URLs → return first result as a redirect
     if (/\/results\?.*search_query=/i.test(url)) {
       return await this._extractSearch(url, options);
+    }
+
+    // Handle playlist URLs → return playlist entries
+    // Matches both /playlist?list=xxx and /watch?v=xxx&list=xxx
+    if (/[?&]list=/.test(url)) {
+      try {
+        const parsed = new URL(url);
+        const listId = parsed.searchParams.get('list');
+        if (listId) {
+          const playlistUrl = `https://www.youtube.com/playlist?list=${listId}`;
+          return await this._extractPlaylist(playlistUrl, options);
+        }
+      } catch {}
+    }
+
+    // Handle channel URLs → return channel video entries
+    if (/\/@[^/]+/.test(url) || /\/channel\//.test(url) || /\/c\//.test(url) || /\/user\//.test(url)) {
+      return await this._extractPlaylist(url, options);
     }
 
     const videoId = this._extractVideoId(url);

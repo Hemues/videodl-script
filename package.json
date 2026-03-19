@@ -1,6 +1,6 @@
 {
   "name": "videodl-cli",
-  "version": "1.5.94",
+  "version": "1.5.98",
   "description": "A CLI video downloader and converter inspired by Video DownloadHelper - similar to yt-dlp",
   "main": "src/index.js",
   "type": "module",
