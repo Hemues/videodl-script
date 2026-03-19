@@ -6,6 +6,7 @@ A powerful CLI video downloader and converter with **21 built-in site extractors
 
 - **21 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, and more
 - **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
+- **Playlist & channel support** — YouTube playlists and channels are auto-detected; videos are downloaded into a subdirectory named after the playlist/channel
 - **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
 - **DASH merging** — automatically merges separate video + audio streams via ffmpeg
 - **HLS streaming** — downloads M3U8 / HLS streams with ffmpeg
@@ -181,6 +182,26 @@ videodl download --sub-lang hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Auto-translate to Hungarian
 videodl download --sub-translate hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+### Download Playlists & Channels
+
+When a YouTube playlist or channel URL is provided, videodl-cli automatically
+creates a subdirectory (named after the playlist or channel) and downloads all
+videos into it.
+
+```bash
+# Download entire playlist into ./downloads/Playlist_Name/
+videodl download "https://www.youtube.com/playlist?list=PLxxx"
+
+# Download a playlist linked from a video URL
+videodl download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
+
+# Channel videos
+videodl download "https://www.youtube.com/@ChannelName"
+
+# Machine-readable (JSON progress for each entry)
+videodl download-json "https://www.youtube.com/playlist?list=PLxxx"
 ```
 
 ### Convert a Video

@@ -949,7 +949,8 @@ export class VideoDownloader extends EventEmitter {
       args.push('-c:v', 'copy', '-c:a', 'copy');
 
       // Determine subtitle codec based on output container
-      const ext = path.extname(outputPath).toLowerCase();
+      // Strip .incomplete suffix so we detect the real container extension
+      const ext = path.extname(outputPath.replace(/\.incomplete$/, '')).toLowerCase();
       if (subtitlePaths.length > 0) {
         if (ext === '.mkv' || ext === '.webm') {
           args.push('-c:s', 'webvtt');

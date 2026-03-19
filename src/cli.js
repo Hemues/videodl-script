@@ -1116,10 +1116,217 @@ program
       // Extract video info
       jsonLine({ status: 'extracting', msg: 'Extracting video information...' });
 
-      let videoInfo, selectedFormat, formatPair = null;
+      let videoInfo;
       try {
         videoInfo = await extractVideoInfo(url, { cookies });
-        jsonLine({ status: 'extracted', title: videoInfo.title, id: videoInfo.id || '' });
+      } catch (extractError) {
+        jsonLine({ status: 'extract_fallback', msg: 'Extraction failed, using direct URL' });
+        videoInfo = { title: 'video' };
+      }
+
+      // Shared helpers
+      const sanitize = (t) => t.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'video';
+      const extractDomain = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
+
+      // ---- Playlist / Channel: create subdirectory and download each entry ----
+      if (videoInfo._type === 'playlist' && videoInfo.entries && videoInfo.entries.length > 0) {
+        const sanitizeDir = (t) => t.replace(/[^\p{L}\p{N}\s\-_]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'playlist';
+        const playlistDir = path.join(options.directory, sanitizeDir(videoInfo.title));
+
+        if (!fs.existsSync(playlistDir)) {
+          fs.mkdirSync(playlistDir, { recursive: true });
+        }
+
+        const entries = videoInfo.entries;
+        jsonLine({ status: 'playlist', title: videoInfo.title, count: entries.length, directory: playlistDir });
+
+        for (let idx = 0; idx < entries.length; idx++) {
+          const entry = entries[idx];
+          const entryUrl = entry.url || entry.webpage_url;
+          if (!entryUrl) {
+            jsonLine({ status: 'warning', msg: `Skipping entry ${idx + 1}: no URL` });
+            continue;
+          }
+
+          jsonLine({ status: 'playlist_progress', current: idx + 1, total: entries.length, title: entry.title || 'Untitled' });
+
+          try {
+            // Extract full info for this entry
+            let entryInfo, entryFormatPair = null, entrySelectedFormat;
+            try {
+              entryInfo = await extractVideoInfo(entryUrl, { cookies });
+
+              const extractor = getExtractor(entryUrl);
+              entryFormatPair = extractor.selectFormatPair(entryInfo.formats, options.format, options.audioLang || null);
+              if (entryFormatPair) {
+                entrySelectedFormat = entryFormatPair.video;
+                if (entryFormatPair.video.protocol === 'hls' && entryFormatPair.audio.protocol === 'hls') {
+                  entryFormatPair._hlsVideoUrl = entryFormatPair.video.url;
+                  if (entryFormatPair.audioTracks && entryFormatPair.audioTracks.length > 1) {
+                    entryFormatPair._hlsAudioUrls = entryFormatPair.audioTracks.map(a => ({
+                      url: a.url, lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+                    }));
+                  } else {
+                    entryFormatPair._hlsAudioUrl = entryFormatPair.audio.url;
+                  }
+                }
+              } else {
+                entrySelectedFormat = extractor.selectFormat(entryInfo.formats, options.format);
+              }
+            } catch {
+              jsonLine({ status: 'warning', msg: `Failed to extract entry ${idx + 1}/${entries.length}: ${entry.title || entryUrl}` });
+              continue;
+            }
+
+            // Build filename for this entry
+            let entryFilename;
+            if (options.output) {
+              entryFilename = options.output;
+            } else {
+              const baseName = sanitize(entryInfo.title);
+              const ext = (entryFormatPair && entryFormatPair._hlsAudioUrls) ? 'mkv' : (entryFormatPair && entryFormatPair._hlsVideoUrl) ? 'mp4' : entryFormatPair ? entryFormatPair.ext : (entrySelectedFormat.ext || 'mp4');
+              if (options.baseUrl !== false) {
+                const domain = extractDomain(entryUrl);
+                entryFilename = domain ? `${baseName}-${domain}.${ext}` : `${baseName}.${ext}`;
+              } else {
+                entryFilename = `${baseName}.${ext}`;
+              }
+            }
+
+            jsonLine({ status: 'preparing', filename: entryFilename, msg: `Downloading [${idx + 1}/${entries.length}]: ${entryInfo.title}` });
+
+            const downloader = new VideoDownloader({ downloadFolder: playlistDir });
+
+            // Throttle progress updates
+            let lastProgressTime = 0;
+            const PROGRESS_THROTTLE = 500;
+            let downloadStartTime = 0;
+            let lastDownloaded = 0;
+            let lastSpeedTime = 0;
+            let currentSpeed = 0;
+
+            downloader.on('start', ({ filepath }) => {
+              downloadStartTime = Date.now();
+              lastSpeedTime = downloadStartTime;
+              lastDownloaded = 0;
+              jsonLine({ status: 'downloading', msg: `Saving to: ${filepath}`, filename: filepath });
+            });
+
+            downloader.on('progress', ({ downloaded, total, percent, isHLS }) => {
+              const now = Date.now();
+              if (now - lastProgressTime >= PROGRESS_THROTTLE) {
+                const elapsed = (now - lastSpeedTime) / 1000;
+                if (elapsed > 0 && downloaded > lastDownloaded) {
+                  currentSpeed = (downloaded - lastDownloaded) / elapsed;
+                }
+                lastDownloaded = downloaded;
+                lastSpeedTime = now;
+                let eta = null;
+                if (isHLS && percent > 0) {
+                  const totalElapsed = (now - downloadStartTime) / 1000;
+                  if (totalElapsed > 0) eta = Math.round((totalElapsed / percent) * (100 - percent));
+                } else if (total > 0 && currentSpeed > 0) {
+                  eta = Math.round((total - downloaded) / currentSpeed);
+                }
+                lastProgressTime = now;
+                jsonLine({ status: 'downloading', downloaded_bytes: downloaded, total_bytes: total, total_bytes_estimate: total, percent, speed: currentSpeed > 0 ? currentSpeed : null, eta: eta !== null ? Math.round(eta) : null });
+              }
+            });
+
+            downloader.on('merge-phase', ({ phase, label }) => {
+              jsonLine({ status: 'postprocessing', msg: label, phase });
+            });
+
+            downloader.on('complete', ({ filepath, size }) => {
+              jsonLine({ status: 'finished', filename: filepath, size, playlist_current: idx + 1, playlist_total: entries.length });
+            });
+
+            downloader.on('error', ({ error }) => {
+              jsonLine({ status: 'error', msg: error.message });
+            });
+
+            // Resolve subtitles
+            const wantSubs = options.subtitle !== false;
+            let subtitleDownloads = [];
+            if (wantSubs && entryInfo.subtitles && Object.keys(entryInfo.subtitles).length > 0) {
+              const subs = entryInfo.subtitles;
+              const requestedLang = options.subLang || null;
+              const translateLang = options.subTranslate || null;
+              if (translateLang) {
+                const firstTrack = Object.values(subs)[0];
+                if (firstTrack.isTranslatable) {
+                  subtitleDownloads.push({ url: firstTrack.formats.vtt + '&tlang=' + translateLang, lang: translateLang, name: `${translateLang} (auto-translated)` });
+                }
+              } else if (requestedLang === 'all' || !requestedLang) {
+                for (const [lang, sub] of Object.entries(subs)) {
+                  subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
+                }
+              } else if (requestedLang && subs[requestedLang]) {
+                subtitleDownloads.push({ url: subs[requestedLang].formats.vtt, lang: requestedLang, name: subs[requestedLang].name });
+              } else {
+                for (const [lang, sub] of Object.entries(subs)) {
+                  subtitleDownloads.push({ url: sub.formats.vtt, lang, name: sub.name });
+                }
+              }
+            }
+
+            // Download using appropriate method
+            if (entryFormatPair && entryFormatPair._hlsVideoUrl) {
+              const hlsOpts = {
+                url: entryFormatPair._hlsVideoUrl,
+                filename: entryFilename, directory: playlistDir,
+                formatHeaders: entryFormatPair.video.headers,
+                rejectUnauthorized: options.sslVerify, cookies,
+                duration: entryInfo.duration || 0,
+                subtitles: subtitleDownloads.length > 0 ? subtitleDownloads : undefined,
+              };
+              if (entryFormatPair._hlsAudioUrls) hlsOpts.hlsAudioUrls = entryFormatPair._hlsAudioUrls;
+              else hlsOpts.hlsAudioUrl = entryFormatPair._hlsAudioUrl;
+              await downloader.downloadHLS(hlsOpts);
+            } else if (entryFormatPair) {
+              const audioStreams = (entryFormatPair.audioTracks || [entryFormatPair.audio]).map(a => ({
+                url: a.url, headers: a.headers, filesize: a.filesize || 0,
+                lang: a.audioTrackLang || null, name: a.audioTrackName || null,
+              }));
+              await downloader.downloadAndMerge({
+                videoStream: { url: entryFormatPair.video.url, headers: entryFormatPair.video.headers, filesize: entryFormatPair.video.filesize || 0 },
+                audioStreams,
+                videoInfo: `${entryFormatPair.video.quality} ${entryFormatPair.video.vcodec || ''}`.trim(),
+                audioInfo: audioStreams.map(a => `${a.lang || 'audio'}`).join('+'),
+                filename: entryFilename, directory: playlistDir, cookies, rejectUnauthorized: options.sslVerify, subtitles: subtitleDownloads,
+              });
+            } else if (entrySelectedFormat.protocol === 'hls' || entrySelectedFormat.ext === 'm3u8' || (entrySelectedFormat.url && entrySelectedFormat.url.includes('.m3u8'))) {
+              const dlOpts = {
+                url: entrySelectedFormat.url, filename: entryFilename, directory: playlistDir,
+                headers: options.header, formatHeaders: entrySelectedFormat.headers,
+                rejectUnauthorized: options.sslVerify, cookies,
+                duration: entryInfo.duration || 0,
+              };
+              if (entrySelectedFormat._hlsPlaylist) dlOpts.hlsPlaylist = entrySelectedFormat._hlsPlaylist;
+              await downloader.downloadHLS(dlOpts);
+            } else {
+              await downloader.download({
+                url: entrySelectedFormat.url, filename: entryFilename, directory: playlistDir,
+                headers: options.header, formatHeaders: entrySelectedFormat.headers,
+                rejectUnauthorized: options.sslVerify, cookies,
+              });
+            }
+          } catch (entryError) {
+            jsonLine({ status: 'warning', msg: `Entry ${idx + 1} failed: ${entryError.message}` });
+          }
+        }
+
+        jsonLine({ status: 'playlist_complete', title: videoInfo.title, count: entries.length, directory: playlistDir });
+        process.exit(0);
+        return;
+      }
+
+      // ---- Single video download ----
+      jsonLine({ status: 'extracted', title: videoInfo.title, id: videoInfo.id || '' });
+
+      let selectedFormat, formatPair = null;
+      try {
+        if (!videoInfo.formats) throw new Error('No formats');
 
         // Warn if session expired — Premium formats unavailable
         if (videoInfo.sessionExpired && cookies) {
@@ -1157,9 +1364,6 @@ program
       }
 
       // Build filename
-      const sanitize = (t) => t.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'video';
-      const extractDomain = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
-
       let filename;
       if (options.output) {
         filename = options.output;
