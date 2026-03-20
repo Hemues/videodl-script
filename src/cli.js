@@ -179,30 +179,37 @@ program
         // Check if session is expired and no Premium formats — try cookie refresh
         const hasPremium = videoInfo.formats.some(f => f.isPremium);
         if (!hasPremium && videoInfo.sessionExpired && cookies) {
-          const loginFileExists = fs.existsSync(path.resolve(loginFile));
-          if ((options.generateCookies || forceRegen) && loginFileExists) {
-            console.log(chalk.yellow(`🔄 Session expired, no Premium formats — attempting cookie refresh...`));
-            try {
-              const genResult = await generateCookies(loginFile, cookieFile, {
-                onlyIfExpired: false,
-                verbose: false,
-                headless: options.headless !== false,
-                captchaProvider: options.captchaProvider,
-                captchaKey: options.captchaKey,
-              });
-              if (genResult.succeeded > 0) {
-                cookies = parseCookieFile(cookieFile);
-                console.log(chalk.green(`✓ Cookies refreshed — re-extracting...`));
-                videoInfo = await extractVideoInfo(url, { cookies });
-                console.log(chalk.green(`✓ Found: ${videoInfo.title}`));
-              } else {
-                console.log(chalk.yellow(`⚠ Cookie refresh failed — continuing with standard formats`));
+          // When SAPISIDHASH auth data exists, the CDN often still honours
+          // premium speed despite LOGGED_IN=false — skip cookie refresh and
+          // only show an informational note.
+          if (videoInfo.hasSapisidAuth) {
+            console.log(chalk.gray(`ℹ YouTube LOGGED_IN=false but auth cookies present — premium speed may still work.`));
+          } else {
+            const loginFileExists = fs.existsSync(path.resolve(loginFile));
+            if ((options.generateCookies || forceRegen) && loginFileExists) {
+              console.log(chalk.yellow(`🔄 Session expired, no Premium formats — attempting cookie refresh...`));
+              try {
+                const genResult = await generateCookies(loginFile, cookieFile, {
+                  onlyIfExpired: false,
+                  verbose: false,
+                  headless: options.headless !== false,
+                  captchaProvider: options.captchaProvider,
+                  captchaKey: options.captchaKey,
+                });
+                if (genResult.succeeded > 0) {
+                  cookies = parseCookieFile(cookieFile);
+                  console.log(chalk.green(`✓ Cookies refreshed — re-extracting...`));
+                  videoInfo = await extractVideoInfo(url, { cookies });
+                  console.log(chalk.green(`✓ Found: ${videoInfo.title}`));
+                } else {
+                  console.log(chalk.yellow(`⚠ Cookie refresh failed — continuing with standard formats`));
+                }
+              } catch (refreshErr) {
+                console.log(chalk.yellow(`⚠ Cookie refresh failed: ${refreshErr.message}`));
               }
-            } catch (refreshErr) {
-              console.log(chalk.yellow(`⚠ Cookie refresh failed: ${refreshErr.message}`));
+            } else if (cookies) {
+              console.log(chalk.yellow(`⚠ YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.`));
             }
-          } else if (cookies) {
-            console.log(chalk.yellow(`⚠ YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.`));
           }
         }
         
@@ -1332,7 +1339,14 @@ program
         if (videoInfo.sessionExpired && cookies) {
           const hasPremium = videoInfo.formats.some(f => f.isPremium);
           if (!hasPremium) {
-            jsonLine({ status: 'warning', msg: 'YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.' });
+            // When SAPISIDHASH auth data exists (SAPISID/__Secure-3PAPISID cookies
+            // present) the CDN often still honours premium speed even though
+            // YouTube's page-level LOGGED_IN flag is false.  Downgrade to info.
+            if (videoInfo.hasSapisidAuth) {
+              jsonLine({ status: 'info', msg: 'YouTube LOGGED_IN=false but auth cookies present — premium speed may still work. Premium format labels unavailable.' });
+            } else {
+              jsonLine({ status: 'warning', msg: 'YouTube session expired — Premium formats unavailable. Re-export cookies from your browser for Premium quality.' });
+            }
           }
         }
 
