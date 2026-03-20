@@ -348,8 +348,14 @@ chmod +x compile.sh
 | `dist/videodl.exe` | Windows x64 standalone | ~92 MB |
 | `dist/videodl-linux` | Linux x64 standalone | ~117 MB |
 | `dist/videodl.cjs` | Portable CJS bundle (needs Node.js) | ~5.5 MB |
+| `dist/index` (Linux) / `dist/index.exe` (Windows) | CycleTLS Go sidecar binary | ~8 MB |
 
 The build pipeline uses **esbuild** for bundling and **Node.js SEA** (Single Executable Application) for binary creation. See [BUILD.md](BUILD.md) for technical details.
+
+> **CycleTLS sidecar:** Several extractors (SpankBang, 9GAG, Dailymotion, Bitchute)
+> and the Cloudflare bypass module require the CycleTLS Go helper binary to be in
+> the same directory as the main executable. The build script copies it automatically
+> to `dist/`. When deploying the binary, always keep the sidecar alongside it.
 
 ## Cookie & Login Setup
 

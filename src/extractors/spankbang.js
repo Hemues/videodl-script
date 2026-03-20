@@ -101,7 +101,7 @@ export class SpankBangExtractor extends BaseExtractor {
           });
         }
       } catch (e) {
-        console.log(`[${this.name}] stream_data parse error: ${e.message}`);
+        console.error(`[${this.name}] stream_data parse error: ${e.message}`);
       }
     }
 
