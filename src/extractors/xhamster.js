@@ -76,6 +76,22 @@ export class XHamsterExtractor extends BaseExtractor {
         title = urlSlug ? urlSlug.replace(/-/g, ' ') : `video_${videoId}`;
       }
 
+      // Extract duration from window.initials → videoModel.duration (seconds)
+      let duration = 0;
+      const initialsMatch = html.match(/window\.initials\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+      if (initialsMatch) {
+        try {
+          const initials = JSON.parse(initialsMatch[1]);
+          if (initials.videoModel?.duration) {
+            duration = initials.videoModel.duration;
+          }
+        } catch {
+          // Fallback: extract duration with simple regex
+          const durMatch = html.match(/"videoModel"\s*:\s*\{[^}]*?"duration"\s*:\s*(\d+)/);
+          if (durMatch) duration = parseInt(durMatch[1]);
+        }
+      }
+
       console.log(`[${this.name}] Extracting video formats...`);
 
       // Method 1: Find HLS playlist with quality ladder
@@ -223,6 +239,7 @@ export class XHamsterExtractor extends BaseExtractor {
       return {
         id: videoId,
         title,
+        duration,
         formats,
         url,
         extractor: this.name
