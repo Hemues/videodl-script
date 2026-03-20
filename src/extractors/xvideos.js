@@ -75,7 +75,7 @@ export class XVideosExtractor extends BaseExtractor {
       
       // Method 2: Look for og:title meta tag
       if (!title) {
-        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
         if (ogTitleMatch) {
           title = decodeHtmlEntities(ogTitleMatch[1]).trim();
         }

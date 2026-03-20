@@ -50,22 +50,43 @@ export class XHamsterExtractor extends BaseExtractor {
       const videoId = urlMatch ? urlMatch[2] : 'unknown';
       const urlSlug = urlMatch ? urlMatch[1] : null;
 
-      // Extract title from page - try multiple methods
+      // Extract title and duration from window.initials (most reliable)
       let title = null;
-      
-      // Method 1: Extract from <title> tag
-      const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-      if (titleMatch) {
-        title = titleMatch[1]
-          .replace(/ - xHamster.*$/i, '')
-          .replace(/ - Pornhub\.com$/i, '')
-          .replace(/\s+/g, ' ')
-          .trim();
+      let duration = 0;
+      const initialsMatch = html.match(/window\.initials\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+      if (initialsMatch) {
+        try {
+          const initials = JSON.parse(initialsMatch[1]);
+          if (initials.videoModel?.title) {
+            title = initials.videoModel.title;
+          }
+          if (initials.videoModel?.duration) {
+            duration = initials.videoModel.duration;
+          }
+        } catch {
+          // Fallback: extract with simple regex
+          const titleJsonMatch = html.match(/"videoModel"\s*:\s*\{[^}]*?"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+          if (titleJsonMatch) title = titleJsonMatch[1];
+          const durMatch = html.match(/"videoModel"\s*:\s*\{[^}]*?"duration"\s*:\s*(\d+)/);
+          if (durMatch) duration = parseInt(durMatch[1]);
+        }
       }
       
-      // Method 2: Look for og:title meta tag
+      // Fallback: Extract from <title> tag
       if (!title) {
-        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+        if (titleMatch) {
+          title = titleMatch[1]
+            .replace(/ - xHamster.*$/i, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
+      }
+
+      // Fallback: og:title meta tag (handle quotes properly)
+      if (!title) {
+        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i)
+          || html.match(/<meta\s+property=["']og:title["']\s+content='([^']+)'/i);
         if (ogTitleMatch) {
           title = ogTitleMatch[1].trim();
         }
@@ -74,22 +95,6 @@ export class XHamsterExtractor extends BaseExtractor {
       // Fallback: Use URL slug if title extraction failed
       if (!title || title.length === 0) {
         title = urlSlug ? urlSlug.replace(/-/g, ' ') : `video_${videoId}`;
-      }
-
-      // Extract duration from window.initials → videoModel.duration (seconds)
-      let duration = 0;
-      const initialsMatch = html.match(/window\.initials\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
-      if (initialsMatch) {
-        try {
-          const initials = JSON.parse(initialsMatch[1]);
-          if (initials.videoModel?.duration) {
-            duration = initials.videoModel.duration;
-          }
-        } catch {
-          // Fallback: extract duration with simple regex
-          const durMatch = html.match(/"videoModel"\s*:\s*\{[^}]*?"duration"\s*:\s*(\d+)/);
-          if (durMatch) duration = parseInt(durMatch[1]);
-        }
       }
 
       console.log(`[${this.name}] Extracting video formats...`);

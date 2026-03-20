@@ -439,7 +439,7 @@ export class BrazzersExtractor extends BaseExtractor {
 
           // Title from <meta og:title>
           const ogTitle = html.match(
-            /<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i
+            /<meta\s+property=["']og:title["']\s+content="([^"]+)"/i
           );
           if (ogTitle) {
             const t = this._decodeEntities(ogTitle[1]).trim();
