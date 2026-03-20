@@ -116,6 +116,7 @@ export class DailymotionExtractor extends BaseExtractor {
     // Parse HLS master playlist for quality variants
     // The master URL is at cdndirector.dailymotion.com which blocks Node.js
     // TLS fingerprint — use cycletls (Chrome JA3 impersonation)
+    const progressiveCount = formats.length;
     const autoSources = qualities.auto;
     if (Array.isArray(autoSources)) {
       for (const source of autoSources) {
@@ -123,10 +124,15 @@ export class DailymotionExtractor extends BaseExtractor {
           try {
             await this._parseHlsMaster(source.url, formats);
           } catch (e) {
-            console.log(`[${this.name}] HLS master parsing failed: ${e.message}`);
+            console.error(`[${this.name}] WARNING: HLS master parsing failed: ${e.message}`);
+            console.error(`[${this.name}] Only progressive formats available — quality may be limited`);
           }
         }
       }
+    }
+
+    if (formats.length === progressiveCount && formats.length > 0) {
+      console.error(`[${this.name}] NOTE: No HLS variants parsed — only ${formats.length} progressive format(s) available`);
     }
 
     if (formats.length === 0) {
