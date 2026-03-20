@@ -1182,7 +1182,7 @@ export class VideoDownloader extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const args = [
-        '-loglevel', 'warning',
+        '-loglevel', 'info',
         '-progress', 'pipe:2'
       ];
       
@@ -1272,6 +1272,10 @@ export class VideoDownloader extends EventEmitter {
       ffmpeg.stderr.on('data', (data) => {
         const output = data.toString();
         stderrOutput += output;
+        // Cap stderr buffer to avoid unbounded growth (keep last 4 KB)
+        if (stderrOutput.length > 8192) {
+          stderrOutput = stderrOutput.slice(-4096);
+        }
         
         // Log errors (but skip progress key-value lines)
         if ((output.includes('error') || output.includes('Error') || output.includes('Invalid')) && !output.startsWith('progress=')) {
@@ -1287,6 +1291,12 @@ export class VideoDownloader extends EventEmitter {
           duration = hours * 3600 + minutes * 60 + seconds;
         }
         
+        // Extract total_size whenever available
+        const sizeMatchNew = output.match(/total_size=(\d+)/);
+        if (sizeMatchNew) {
+          totalSize = parseInt(sizeMatchNew[1]);
+        }
+
         // Parse -progress pipe:2 key-value pairs (modern ffmpeg)
         // Format: out_time=HH:MM:SS.MMMMMM, total_size=BYTES, progress=continue/end
         const outTimeMatch = output.match(/out_time=(\d{2}):(\d{2}):(\d{2})/);
@@ -1295,42 +1305,34 @@ export class VideoDownloader extends EventEmitter {
           const minutes = parseInt(outTimeMatch[2]);
           const seconds = parseInt(outTimeMatch[3]);
           const currentTime = hours * 3600 + minutes * 60 + seconds;
-          if (duration > 0) {
-            const percent = Math.min(100, (currentTime / duration) * 100);
-            // Extract total_size from the same progress report
-            const sizeMatchNew = output.match(/total_size=(\d+)/);
-            if (sizeMatchNew) {
-              totalSize = parseInt(sizeMatchNew[1]);
-            }
-            this.emit('progress', {
-              downloaded: totalSize || 0,
-              total: 0,
-              percent: percent,
-              isHLS: true,
-            });
-          }
+          const percent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+          this.emit('progress', {
+            downloaded: totalSize || 0,
+            total: 0,
+            percent: percent,
+            isHLS: true,
+          });
+          return;
         }
 
         // Fallback: legacy -stats format (older ffmpeg versions)
-        if (!outTimeMatch) {
-          const sizeMatch = output.match(/size=\s*(\d+)kB/);
-          if (sizeMatch) {
-            totalSize = parseInt(sizeMatch[1]) * 1024;
-          }
-          const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
-          if (timeMatch && duration > 0) {
-            const hours = parseInt(timeMatch[1]);
-            const minutes = parseInt(timeMatch[2]);
-            const seconds = parseInt(timeMatch[3]);
-            const currentTime = hours * 3600 + minutes * 60 + seconds;
-            const percent = Math.min(100, (currentTime / duration) * 100);
-            this.emit('progress', {
-              downloaded: totalSize || 0,
-              total: 0,
-              percent: percent,
-              isHLS: true,
-            });
-          }
+        const sizeMatch = output.match(/size=\s*(\d+)kB/);
+        if (sizeMatch) {
+          totalSize = parseInt(sizeMatch[1]) * 1024;
+        }
+        const timeMatch = output.match(/time=(\d{2}):(\d{2}):(\d{2})/);
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const seconds = parseInt(timeMatch[3]);
+          const currentTime = hours * 3600 + minutes * 60 + seconds;
+          const percent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+          this.emit('progress', {
+            downloaded: totalSize || 0,
+            total: 0,
+            percent: percent,
+            isHLS: true,
+          });
         }
       });
 
