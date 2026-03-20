@@ -250,6 +250,17 @@ for f in dist/videodl-linux dist/videodl-ffmpeg-linux dist/videodl.exe dist/vide
     fi
 done
 
+# Include CycleTLS Go helper binary (renamed to avoid confusion with the index* names)
+for f in dist/index dist/index.exe; do
+    if [ -f "$f" ]; then
+        # Rename to cycletls-index-* for clarity in release assets
+        case "$f" in
+            dist/index)     cp "$f" "dist/cycletls-index-linux"; RELEASE_FILES="$RELEASE_FILES dist/cycletls-index-linux" ;;
+            dist/index.exe) cp "$f" "dist/cycletls-index-windows.exe"; RELEASE_FILES="$RELEASE_FILES dist/cycletls-index-windows.exe" ;;
+        esac
+    fi
+done
+
 if [ -z "$RELEASE_FILES" ]; then
     echo "  ⚠ No release artifacts found in dist/"
 else

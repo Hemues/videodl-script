@@ -37,8 +37,8 @@ export class SpankBangExtractor extends BaseExtractor {
     const videoPageUrl = `https://spankbang.com/${videoId}/video/`;
 
     // Use cycletls to bypass TLS fingerprint checks
-    const { default: initCycleTLS } = await import('cycletls');
-    const cycleTLS = await initCycleTLS();
+    const { createCycleTLS } = await import('../cycletls-helper.js');
+    const cycleTLS = await createCycleTLS();
 
     let html;
     try {
