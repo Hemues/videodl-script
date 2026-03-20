@@ -1704,7 +1704,8 @@ export class YouTubeExtractor extends BaseExtractor {
       thumbnail: videoDetails2.thumbnail?.thumbnails?.at(-1)?.url || null,
       subtitles: subtitles || null,
       translationLanguages: translationLanguages || null,
-      sessionExpired: this._sessionExpired || false
+      sessionExpired: this._sessionExpired || false,
+      hasSapisidAuth: !!this._generateSapisidHash()
     };
   }
 }
