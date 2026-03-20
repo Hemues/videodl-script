@@ -34,8 +34,8 @@ export class BitchuteExtractor extends BaseExtractor {
     console.log(`[${this.name}] Video ID: ${videoId}`);
 
     // Use cycletls to bypass Cloudflare TLS fingerprint checks
-    const { default: initCycleTLS } = await import('cycletls');
-    const cycleTLS = await initCycleTLS();
+    const { createCycleTLS } = await import('../cycletls-helper.js');
+    const cycleTLS = await createCycleTLS();
 
     let html;
     try {

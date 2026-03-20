@@ -162,8 +162,8 @@ export class DailymotionExtractor extends BaseExtractor {
   async _parseHlsMaster(masterUrl, formats) {
     console.log(`[${this.name}] Fetching HLS master (TLS impersonation)...`);
 
-    const { default: initCycleTLS } = await import('cycletls');
-    const cycleTLS = await initCycleTLS();
+    const { createCycleTLS } = await import('../cycletls-helper.js');
+    const cycleTLS = await createCycleTLS();
 
     try {
       const resp = await cycleTLS(masterUrl, {

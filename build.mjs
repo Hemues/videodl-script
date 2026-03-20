@@ -108,6 +108,11 @@ async function bundle() {
   // Replace the entire utils block with inlined implementations.
   patchLazyCache(bundlePath);
 
+  // Copy the CycleTLS Go helper binary to dist/ so it ships alongside the SEA binary.
+  // When running as a compiled binary, __dirname resolves to the binary's directory,
+  // so the Go helper must be there instead of node_modules/cycletls/dist/.
+  copyCycleTLSBinary();
+
   const sizeKB = (fs.statSync(bundlePath).size / 1024).toFixed(0);
   console.log(`\n  Bundle: ${bundlePath}  (${sizeKB} KB)\n`);
 }
@@ -167,6 +172,37 @@ function patchLazyCache(filePath) {
   code = code.replace(lazyCachePattern, replacement);
   fs.writeFileSync(filePath, code, 'utf-8');
   console.log('  [patch] Replaced lazy-cache pattern with inlined implementations');
+}
+
+/**
+ * Copy the CycleTLS Go helper binary for the current platform to dist/.
+ * This binary must live next to the SEA executable so CycleTLS can spawn it.
+ */
+function copyCycleTLSBinary() {
+  const PLATFORM_BINARIES = {
+    win32:  { x64: 'index.exe' },
+    linux:  { arm: 'index-arm', arm64: 'index-arm64', x64: 'index' },
+    darwin: { x64: 'index-mac', arm: 'index-mac-arm', arm64: 'index-mac-arm64' },
+    freebsd:{ x64: 'index-freebsd' },
+  };
+
+  const fileName = PLATFORM_BINARIES[process.platform]?.[process.arch];
+  if (!fileName) {
+    console.log('  [cycletls] No Go binary for this platform — skipping');
+    return;
+  }
+
+  const src = path.join(__dirname, 'node_modules', 'cycletls', 'dist', fileName);
+  const dst = path.join(distDir, fileName);
+  if (!fs.existsSync(src)) {
+    console.log(`  [cycletls] Go binary not found at ${src} — skipping`);
+    return;
+  }
+
+  fs.copyFileSync(src, dst);
+  if (process.platform !== 'win32') fs.chmodSync(dst, 0o755);
+  const sizeMB = (fs.statSync(dst).size / 1024 / 1024).toFixed(1);
+  console.log(`  [cycletls] Copied Go helper: ${fileName} (${sizeMB} MB)`);
 }
 
 // ─── Step 2: Node.js SEA blob generation ─────────────────────────────────────

@@ -38,7 +38,7 @@ const CHROME_UA  = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
  */
 export async function cfProtectedDownload({ url, filepath, headers = {}, timeout = 600_000, onStatus, onProgress }) {
   // Dynamic import — only loaded when CF download is needed
-  const { default: initCycleTLS } = await import('cycletls');
+  const { createCycleTLS } = await import('./cycletls-helper.js');
 
   const status = (msg) => onStatus?.(msg);
   const dir = path.dirname(filepath);
@@ -47,7 +47,7 @@ export async function cfProtectedDownload({ url, filepath, headers = {}, timeout
   let cycleTLS;
   try {
     status('Initializing TLS client...');
-    cycleTLS = await initCycleTLS();
+    cycleTLS = await createCycleTLS();
 
     // Build request headers
     const reqHeaders = {

@@ -34,8 +34,8 @@ export class NineGagExtractor extends BaseExtractor {
     console.log(`[${this.name}] GAG ID: ${gagId}`);
 
     // Use cycletls to bypass TLS fingerprint checks (regular got gets 403)
-    const { default: initCycleTLS } = await import('cycletls');
-    const cycleTLS = await initCycleTLS();
+    const { createCycleTLS } = await import('../cycletls-helper.js');
+    const cycleTLS = await createCycleTLS();
 
     let html;
     try {
