@@ -1356,6 +1356,11 @@ program
           }
         } else {
           selectedFormat = extractor.selectFormat(videoInfo.formats, options.format);
+          // Warn if selected quality differs from requested
+          const reqHeight = options.format === 'best' ? null : parseInt((options.format || '').match(/(\d+)/)?.[1]);
+          if (reqHeight && selectedFormat.height && selectedFormat.height < reqHeight) {
+            jsonLine({ status: 'warning', msg: `Requested ${options.format} but best available is ${selectedFormat.height}p (${videoInfo.formats.length} format(s) found)` });
+          }
         }
       } catch (extractError) {
         jsonLine({ status: 'extract_fallback', msg: 'Extraction failed, using direct URL' });
