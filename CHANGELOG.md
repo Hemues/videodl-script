@@ -2,6 +2,36 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.10] - 2026-07-17
+
+### Fixed
+- **CycleTLS Go sidecar binary**: The Go helper binary (`index` on Linux, `index.exe` on Windows)
+  is now shipped alongside the SEA binary. Previously, CycleTLS-dependent extractors
+  (SpankBang, 9GAG, Dailymotion HLS, Bitchute, Cloudflare bypass) failed with
+  "Executable not found" when running as a compiled binary or in a container.
+  - `build.mjs` copies the Go binary to `dist/` during build
+  - `compile.sh` includes the Go binary as a release asset
+  - New `src/cycletls-helper.js` centralizes CycleTLS initialization with sidecar resolution
+- **Dailymotion quality limited to 360p**: HLS master playlist parsing failed silently
+  (due to missing CycleTLS sidecar), leaving only progressive formats (max 360p).
+  Higher qualities (480p, 720p, 1080p) are only available via HLS variants.
+  Added `console.error` warnings when HLS parsing fails so the issue is visible.
+- **Quality selection warnings**: When the download engine selects a lower quality than
+  requested (e.g. user asks for 1080p but only 360p is available), a warning is now
+  emitted in both CLI and JSON output modes.
+- **Error logging consistency**: Changed `console.log` to `console.error` for parse
+  errors in SpankBang (`stream_data`) and 9GAG (`_config`, JSON-LD) extractors.
+  Errors now go to stderr as expected.
+
+### Added
+- 14 new site extractors (35 total): SpankBang, 9GAG, Dailymotion, Bitchute,
+  EroProfile, EPorner, 4tube, Fux, Fapster, NoodleMagazine, HClips, HDSex,
+  HotMovs, Voyeurhit
+- `src/cycletls-helper.js` — shared CycleTLS initialization with automatic
+  sidecar binary detection for SEA/container deployments
+- `src/cf-solver.js` — Cloudflare-protected download with TLS impersonation,
+  resume support, and progress callbacks
+
 ## [1.0.0] - 2026-02-10
 
 ### Site Extractors (21 sites)

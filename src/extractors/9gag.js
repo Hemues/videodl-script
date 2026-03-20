@@ -106,7 +106,7 @@ export class NineGagExtractor extends BaseExtractor {
           }
         }
       } catch (e) {
-        console.log(`[${this.name}] _config parse error: ${e.message}`);
+        console.error(`[${this.name}] _config parse error: ${e.message}`);
       }
     }
 
@@ -128,7 +128,9 @@ export class NineGagExtractor extends BaseExtractor {
               format_id: 'jsonld-video',
             });
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          console.error(`[${this.name}] JSON-LD parse error: ${e.message}`);
+        }
       }
     }
 
