@@ -144,7 +144,7 @@ export class KVSExtractor extends BaseExtractor {
 
     // Extract title
     let title = null;
-    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
     if (ogTitle) title = this._decodeHtmlEntities(ogTitle[1]).trim();
     if (!title) {
       const titleTag = html.match(/<title>([^<]+)<\/title>/);
@@ -162,7 +162,7 @@ export class KVSExtractor extends BaseExtractor {
 
     // Extract individual flashvar values
     const getVar = (name) => {
-      const m = fvBlock.match(new RegExp(`${name}\\s*:\\s*'([^']*)'`));
+      const m = fvBlock.match(new RegExp(`${name}\\s*:\\s*'([^'\\\\]*(?:\\\\.[^'\\\\]*)*)'`));
       return m ? m[1] : null;
     };
 

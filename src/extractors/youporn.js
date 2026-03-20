@@ -76,7 +76,7 @@ export class YouPornExtractor extends BaseExtractor {
       
       // Method 2: Look for og:title meta tag
       if (!title) {
-        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+        const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
         if (ogTitleMatch) {
           title = decodeHtmlEntities(ogTitleMatch[1]).trim();
         }
@@ -84,7 +84,7 @@ export class YouPornExtractor extends BaseExtractor {
       
       // Method 3: Look for video title in JSON data
       if (!title) {
-        const jsonTitleMatch = html.match(/"video_title"\s*:\s*"([^"]+)"/);
+        const jsonTitleMatch = html.match(/"video_title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
         if (jsonTitleMatch) {
           title = decodeHtmlEntities(jsonTitleMatch[1].replace(/\\"/g, '"')).trim();
         }
@@ -92,7 +92,7 @@ export class YouPornExtractor extends BaseExtractor {
       
       // Method 4: Look for videoTitle in page
       if (!title) {
-        const videoTitleMatch = html.match(/videoTitle['"]\s*:\s*["']([^"']+)["']/);
+        const videoTitleMatch = html.match(/videoTitle['"]\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
         if (videoTitleMatch) {
           title = decodeHtmlEntities(videoTitleMatch[1]).trim();
         }

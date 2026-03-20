@@ -96,7 +96,7 @@ export class UncensoredHentaiExtractor extends BaseExtractor {
 
     // Extract title from page
     let title = null;
-    const ogTitle = watchHtml.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    const ogTitle = watchHtml.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
     if (ogTitle) title = ogTitle[1].trim();
     if (!title) {
       const titleTag = watchHtml.match(/<title>([^<]+)<\/title>/i);

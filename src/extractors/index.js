@@ -103,7 +103,14 @@ export function getExtractor(url) {
  */
 export async function extractVideoInfo(url, options = {}) {
   const extractor = getExtractor(url);
-  return await extractor.extract(url, options);
+  const info = await extractor.extract(url, options);
+  if (info.title) info.title = info.title.replace(/'/g, '');
+  if (info.entries) {
+    for (const entry of info.entries) {
+      if (entry.title) entry.title = entry.title.replace(/'/g, '');
+    }
+  }
+  return info;
 }
 
 /**

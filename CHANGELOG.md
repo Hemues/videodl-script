@@ -5,6 +5,12 @@ All notable changes to videodl-cli will be documented in this file.
 ## [2.0.10] - 2026-07-17
 
 ### Fixed
+- **Title truncation on apostrophes**: Titles containing apostrophes (e.g. "I'm so Tired...")
+  were truncated at the `'` character. Root cause: `og:title` regex used `[^"']+` which stops
+  at either quote type. Fixed the regex in all extractors to `[^"]+` (match only the enclosing
+  double quote). Also added centralized apostrophe stripping in `extractVideoInfo()`.
+- **xHamster title extraction**: Switched primary title source to `window.initials.videoModel.title`
+  (from JSON) instead of `<title>` tag / `og:title` meta (which fail or truncate on this site).
 - **HLS download progress reporting**: Changed ffmpeg loglevel from `warning` to
   `info` so the `Duration:` line is captured for time-based progress. Removed the
   `duration > 0` guard that suppressed all progress events when duration was unknown.

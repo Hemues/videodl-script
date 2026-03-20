@@ -67,7 +67,7 @@ export class Tube8Extractor extends BaseExtractor {
 
     // Extract title
     let title = null;
-    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
     if (ogTitle) {
       title = this._decodeHtmlEntities(ogTitle[1])
         .replace(/\s*Porn Videos\s*-\s*Tube8$/i, '')

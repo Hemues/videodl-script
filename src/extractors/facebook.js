@@ -105,7 +105,7 @@ export class FacebookExtractor extends BaseExtractor {
       const html = resp.body;
 
       // Try Relay metadata: "meta":{"title":"..."}
-      const metaTitle = html.match(/"meta":\s*\{[^}]*"title"\s*:\s*"([^"]+)"/);
+      const metaTitle = html.match(/"meta":\s*\{[^}]*"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
       if (metaTitle) {
         return this._unescapeJson(metaTitle[1]);
       }

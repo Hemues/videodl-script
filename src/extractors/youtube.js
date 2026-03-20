@@ -974,7 +974,7 @@ export class YouTubeExtractor extends BaseExtractor {
       playlistTitle = metadata?.title || null;
     }
     if (!playlistTitle) {
-      const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+      const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
       if (ogTitle) playlistTitle = this._decodeHtmlEntities(ogTitle[1]);
     }
     if (!playlistTitle) playlistTitle = 'YouTube Playlist';
@@ -1121,7 +1121,7 @@ export class YouTubeExtractor extends BaseExtractor {
 
     // 2. Extract title from page
     let title = null;
-    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
     if (ogTitle) title = this._decodeHtmlEntities(ogTitle[1]);
     if (!title) {
       const titleTag = html.match(/<title>([^<]+)<\/title>/);

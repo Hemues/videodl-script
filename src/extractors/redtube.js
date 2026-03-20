@@ -65,7 +65,7 @@ export class RedTubeExtractor extends BaseExtractor {
 
     // Extract title
     let title = null;
-    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
+    const ogTitle = html.match(/<meta\s+property=["']og:title["']\s+content="([^"]+)"/i);
     if (ogTitle) title = this._decodeHtmlEntities(ogTitle[1]).trim();
     if (!title) {
       const titleTag = html.match(/<title>([^<]+)<\/title>/);
