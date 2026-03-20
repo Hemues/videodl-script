@@ -85,6 +85,11 @@ export class Tube8Extractor extends BaseExtractor {
     if (!title) title = `Tube8_${videoId}`;
     console.log(`[${this.name}] Title: ${title}`);
 
+    // Extract duration
+    let duration = 0;
+    const durMatch = html.match(/"video_duration"\s*:\s*"?(\d+)"?/) || html.match(/"duration"\s*:\s*"?(\d{2,})"?/);
+    if (durMatch) duration = parseInt(durMatch[1]);
+
     // Extract mediaDefinitions from playervars
     const mdMatch = html.match(/"mediaDefinitions"\s*:\s*(\[[\s\S]*?\])\s*[,}]/);
     if (!mdMatch) {
@@ -195,6 +200,7 @@ export class Tube8Extractor extends BaseExtractor {
     return {
       id: videoId,
       title,
+      duration,
       formats,
       url,
       extractor: this.name,

@@ -602,6 +602,9 @@ export class BrazzersExtractor extends BaseExtractor {
     console.log(`[${this.name}] Title: ${title}`);
 
     // ── Step 4: Check auth quality & attempt token refresh ────────
+    // Extract duration from release data (seconds)
+    const duration = release.duration || release.totalDuration || 0;
+
     let hasFullVideo = !!(release.videos && release.videos.full);
 
     if (!hasFullVideo && accessToken) {
@@ -787,6 +790,7 @@ export class BrazzersExtractor extends BaseExtractor {
     return {
       id: sceneId,
       title,
+      duration,
       formats,
       url,
       extractor: this.name,

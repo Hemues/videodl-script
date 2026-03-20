@@ -73,6 +73,11 @@ export class SpankBangExtractor extends BaseExtractor {
     title = title.replace(/:\s*Porn\s*-\s*SpankBang$/i, '').trim();
     console.log(`[${this.name}] Title: ${title}`);
 
+    // Extract duration (seconds)
+    let duration = 0;
+    const durMatch = html.match(/"duration"\s*:\s*(\d{2,})/) || html.match(/data-duration=["'](\d+)["']/);
+    if (durMatch) duration = parseInt(durMatch[1]);
+
     const formats = [];
 
     // Parse stream_data JS object - it uses single-quoted JS syntax:
@@ -153,6 +158,7 @@ export class SpankBangExtractor extends BaseExtractor {
     return {
       id: videoId,
       title,
+      duration,
       formats,
       thumbnail,
       extractor: this.name,

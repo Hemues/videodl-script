@@ -96,6 +96,9 @@ export class PornHubExtractor extends BaseExtractor {
 
       console.log(`[${this.name}] Extracting video formats...`);
 
+      // Extract duration (seconds)
+      let duration = 0;
+
       // Method 1: Extract from flashvars_* JSON
       const formats = [];
       const standardHeaders = {
@@ -109,6 +112,9 @@ export class PornHubExtractor extends BaseExtractor {
       if (flashvarsMatch) {
         try {
           const flashvars = JSON.parse(flashvarsMatch[1]);
+
+          // Extract duration from flashvars
+          if (flashvars.video_duration) duration = parseInt(flashvars.video_duration);
           
           // Extract from mediaDefinitions
           if (flashvars.mediaDefinitions && Array.isArray(flashvars.mediaDefinitions)) {
@@ -258,6 +264,7 @@ export class PornHubExtractor extends BaseExtractor {
       return {
         id: videoId,
         title,
+        duration,
         formats,
         url,
         extractor: this.name
