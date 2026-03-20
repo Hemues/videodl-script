@@ -96,12 +96,14 @@ export class DailymotionExtractor extends BaseExtractor {
         if (!source.url || source.type === 'application/vnd.lumberjack.manifest') continue;
 
         if (source.type === 'video/mp4') {
-          // Try to extract resolution from URL path like /H264-640x352-(60)/
+          // Extract FPS from URL path like /H264-640x352-(60)/
           const urlReso = source.url.match(/\/H264-(\d+)x(\d+)(?:-(\d+))?/);
           formats.push({
             url: source.url,
             ext: 'mp4',
-            height: urlReso ? parseInt(urlReso[2]) : height,
+            // Use the API quality label (e.g. 480) as height — Dailymotion's
+            // labels differ from actual pixel height (e.g. 640x352 → "480p")
+            height,
             width: urlReso ? parseInt(urlReso[1]) : Math.round(height * (16 / 9)),
             fps: urlReso?.[3] ? parseInt(urlReso[3]) : 0,
             quality: `${height}p`,
@@ -194,7 +196,11 @@ export class DailymotionExtractor extends BaseExtractor {
         const bandwidthMatch = line.match(/BANDWIDTH=(\d+)/);
         const codecsMatch = line.match(/CODECS="([^"]+)"/);
         const nameMatch = line.match(/NAME="([^"]+)"/);
-        const height = resoMatch ? parseInt(resoMatch[2]) : 0;
+        // Prefer NAME (Dailymotion quality label) over actual pixel height;
+        // Dailymotion labels differ from resolution (e.g. 640x352 → NAME="480")
+        const nameHeight = nameMatch ? parseInt(nameMatch[1]) : 0;
+        const resoHeight = resoMatch ? parseInt(resoMatch[2]) : 0;
+        const height = nameHeight || resoHeight;
 
         // Next non-comment, non-empty line is the variant URI
         let uri = '';
