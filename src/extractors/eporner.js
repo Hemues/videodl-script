@@ -55,6 +55,12 @@ export class EpornerExtractor extends BaseExtractor {
     if (!title) title = `Eporner_${videoId}`;
     console.log(`[${this.name}] Title: ${title}`);
 
+    // Extract duration (seconds)
+    let duration = 0;
+    const durMatch = html.match(/<meta\s+property=["']og:(?:video:)?duration["']\s+content=["'](\d+)["']/i)
+                  || html.match(/"duration"\s*:\s*(\d{2,})/);
+    if (durMatch) duration = parseInt(durMatch[1]);
+
     const formats = [];
 
     // Extract download links - pattern: /dload/{id}/{quality}/{filename}.mp4
@@ -160,6 +166,7 @@ export class EpornerExtractor extends BaseExtractor {
     return {
       id: videoId,
       title,
+      duration,
       formats,
       thumbnail,
       extractor: this.name,

@@ -5,6 +5,17 @@ All notable changes to videodl-cli will be documented in this file.
 ## [2.0.10] - 2026-07-17
 
 ### Fixed
+- **HLS download progress reporting**: Changed ffmpeg loglevel from `warning` to
+  `info` so the `Duration:` line is captured for time-based progress. Removed the
+  `duration > 0` guard that suppressed all progress events when duration was unknown.
+  Downloads now always emit progress (with `percent: 0` if duration is unavailable).
+  Capped stderr buffer at 4 KB to prevent unbounded memory growth on long HLS streams.
+- **Duration extraction**: Added `duration` to the return value of xHamster, XVideos,
+  XNXX, PornHub, RedTube, YouPorn, Tube8, SpankBang, Eporner, and Brazzers extractors.
+  Previously these returned `undefined`, causing HLS downloads to show 0% progress
+  throughout the entire download (appearing stuck).
+- **Dailymotion quality labels**: Use quality labels (e.g. "480p") instead of actual
+  pixel heights (e.g. "352p") since Dailymotion labels differ from stream resolution.
 - **CycleTLS Go sidecar binary**: The Go helper binary (`index` on Linux, `index.exe` on Windows)
   is now shipped alongside the SEA binary. Previously, CycleTLS-dependent extractors
   (SpankBang, 9GAG, Dailymotion HLS, Bitchute, Cloudflare bypass) failed with

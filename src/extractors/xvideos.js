@@ -94,6 +94,17 @@ export class XVideosExtractor extends BaseExtractor {
         title = `video_${videoId}`;
       }
 
+      // Extract duration (seconds)
+      let duration = 0;
+      const durFnMatch = html.match(/setVideoDuration\(['"]?(\d+)['"]?\)/);
+      if (durFnMatch) {
+        duration = parseInt(durFnMatch[1]);
+      } else {
+        const durMetaMatch = html.match(/<meta\s+property=["']og:(?:video:)?duration["']\s+content=["'](\d+)["']/i)
+                          || html.match(/"duration"\s*:\s*(\d{2,})/);
+        if (durMetaMatch) duration = parseInt(durMetaMatch[1]);
+      }
+
       console.log(`[${this.name}] Extracting video formats...`);
 
       const formats = [];
@@ -328,6 +339,7 @@ export class XVideosExtractor extends BaseExtractor {
       return {
         id: videoId,
         title,
+        duration,
         formats,
         url,
         extractor: this.name

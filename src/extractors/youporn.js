@@ -103,6 +103,11 @@ export class YouPornExtractor extends BaseExtractor {
         title = `video_${videoId}`;
       }
 
+      // Extract duration (seconds)
+      let duration = 0;
+      const durMatch = html.match(/"video_duration"\s*:\s*"?(\d+)"?/) || html.match(/"duration"\s*:\s*"?(\d{2,})"?/);
+      if (durMatch) duration = parseInt(durMatch[1]);
+
       console.log(`[${this.name}] Extracting video formats...`);
 
       const formats = [];
@@ -375,6 +380,7 @@ export class YouPornExtractor extends BaseExtractor {
       return {
         id: videoId,
         title,
+        duration,
         formats,
         url,
         extractor: this.name
