@@ -25,6 +25,20 @@ import { TubeSafariExtractor } from './tubesafari.js';
 import { PornOneExtractor } from './pornone.js';
 import { PornZogExtractor } from './pornzog.js';
 import { BrazzersExtractor } from './brazzers.js';
+import { DailymotionExtractor } from './dailymotion.js';
+import { StreamableExtractor } from './streamable.js';
+import { RedditExtractor } from './reddit.js';
+import { RumbleExtractor } from './rumble.js';
+import { BitchuteExtractor } from './bitchute.js';
+import { TwitchExtractor } from './twitch.js';
+import { TwitterExtractor } from './twitter.js';
+import { TikTokExtractor } from './tiktok.js';
+import { InstagramExtractor } from './instagram.js';
+import { OdyseeExtractor } from './odysee.js';
+import { ImgurExtractor } from './imgur.js';
+import { NineGagExtractor } from './9gag.js';
+import { EpornerExtractor } from './eporner.js';
+import { SpankBangExtractor } from './spankbang.js';
 
 // Registry of all extractors
 const EXTRACTORS = [
@@ -49,6 +63,20 @@ const EXTRACTORS = [
   PornOneExtractor,
   PornZogExtractor,
   BrazzersExtractor,
+  DailymotionExtractor,
+  StreamableExtractor,
+  RedditExtractor,
+  RumbleExtractor,
+  BitchuteExtractor,
+  TwitchExtractor,
+  TwitterExtractor,
+  TikTokExtractor,
+  InstagramExtractor,
+  OdyseeExtractor,
+  ImgurExtractor,
+  NineGagExtractor,
+  EpornerExtractor,
+  SpankBangExtractor,
   DirectExtractor  // Always try direct URL last
 ];
 
@@ -116,6 +144,20 @@ export function listExtractors() {
     'PornOne':           'pornone.com',
     'PornZog':           'pornzog.com (HClips embeds)',
     'Brazzers':          'brazzers.com, site-ma.brazzers.com (needs cookies)',
+    'Dailymotion':       'dailymotion.com, dai.ly',
+    'Streamable':        'streamable.com',
+    'Reddit':            'reddit.com, v.redd.it',
+    'Rumble':            'rumble.com',
+    'Bitchute':          'bitchute.com',
+    'Twitch':            'twitch.tv clips & VODs, clips.twitch.tv',
+    'Twitter':           'twitter.com, x.com',
+    'TikTok':            'tiktok.com, vm.tiktok.com',
+    'Instagram':         'instagram.com (posts, reels, IGTV)',
+    'Odysee':            'odysee.com (LBRY)',
+    'Imgur':             'imgur.com (video/gifv)',
+    '9GAG':              '9gag.com (video posts)',
+    'Eporner':           'eporner.com',
+    'SpankBang':         'spankbang.com',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',
   };
 

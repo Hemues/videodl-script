@@ -53,6 +53,7 @@ build/
 test/downloads/
 test/output/
 coverage/
+_test_*.mjs
 
 # Temporary
 tmp/
@@ -60,7 +61,8 @@ temp/
 *.tmp
 
 # Credentials — NEVER commit real cookies or logins
-cookies/cookies.txt
+cookies/*.txt
+!cookies/cookies.txt.example
 logins/logins.txt
 
 # Debug dumps

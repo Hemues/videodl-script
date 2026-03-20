@@ -1,10 +1,10 @@
 # videodl-cli
 
-A powerful CLI video downloader and converter with **21 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
+A powerful CLI video downloader and converter with **35 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
 
 ## Features
 
-- **21 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, and more
+- **35 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
 - **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
 - **Playlist & channel support** — YouTube playlists and channels are auto-detected; videos are downloaded into a subdirectory named after the playlist/channel
 - **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
@@ -35,6 +35,20 @@ A powerful CLI video downloader and converter with **21 built-in site extractors
 | Tube8 | tube8.com | Full support |
 | Facebook | facebook.com, fb.watch | Full support |
 | Vimeo | vimeo.com | Full support |
+| Dailymotion | dailymotion.com, dai.ly | TLS fingerprint bypass (cycletls) |
+| Twitch | twitch.tv, clips.twitch.tv | Clips and VODs |
+| Reddit | reddit.com, v.redd.it | HLS adaptive streaming |
+| Twitter/X | twitter.com, x.com | Via fxtwitter API; some tweets may fail |
+| TikTok | tiktok.com, vm.tiktok.com | May require cookies |
+| Instagram | instagram.com | Requires cookies (posts, reels, IGTV) |
+| Streamable | streamable.com | Full support |
+| Rumble | rumble.com | Full support |
+| Odysee | odysee.com | LBRY resolve API |
+| 9GAG | 9gag.com | Video posts; TLS fingerprint bypass (cycletls) |
+| SpankBang | spankbang.com | TLS fingerprint bypass (cycletls) |
+| Eporner | eporner.com | Multiple qualities including AV1 |
+| Bitchute | bitchute.com | Limited — SPA may require JavaScript rendering |
+| Imgur | imgur.com | Video/gifv posts; limited SPA support |
 | Indavideo | indavideo.hu | Full support |
 | Videa | videa.hu, videakid.hu | Full support |
 | Motherless | motherless.com | Full support |
@@ -466,7 +480,7 @@ videodl-cli/
 │   ├── ffmpeg-helper.js       # Auto-download ffmpeg if missing
 │   ├── help.js                # CLI help text
 │   ├── extractors/
-│   │   ├── index.js           # Extractor registry (21 sites)
+│   │   ├── index.js           # Extractor registry (35 sites)
 │   │   ├── base.js            # BaseExtractor class
 │   │   ├── youtube.js         # YouTube extractor
 │   │   ├── xhamster.js        # xHamster extractor
@@ -474,7 +488,19 @@ videodl-cli/
 │   │   ├── xvideos.js         # XVideos extractor
 │   │   ├── facebook.js        # Facebook extractor
 │   │   ├── vimeo.js           # Vimeo extractor
-│   │   └── ...                # 15 more site extractors
+│   │   ├── dailymotion.js     # Dailymotion extractor (cycletls)
+│   │   ├── twitch.js          # Twitch clips & VODs (GQL API)
+│   │   ├── reddit.js          # Reddit video extractor
+│   │   ├── twitter.js         # Twitter/X extractor (fxtwitter API)
+│   │   ├── tiktok.js          # TikTok extractor
+│   │   ├── instagram.js       # Instagram extractor
+│   │   ├── streamable.js      # Streamable extractor
+│   │   ├── rumble.js          # Rumble extractor
+│   │   ├── odysee.js          # Odysee/LBRY extractor
+│   │   ├── spankbang.js       # SpankBang extractor (cycletls)
+│   │   ├── 9gag.js            # 9GAG extractor (cycletls)
+│   │   ├── eporner.js         # Eporner extractor
+│   │   └── ...                # More site extractors
 │   ├── cookie-extractors/
 │   │   └── brazzers/          # Brazzers-specific login automation
 │   └── vendor/
