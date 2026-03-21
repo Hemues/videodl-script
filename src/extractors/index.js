@@ -39,6 +39,7 @@ import { ImgurExtractor } from './imgur.js';
 import { NineGagExtractor } from './9gag.js';
 import { EpornerExtractor } from './eporner.js';
 import { SpankBangExtractor } from './spankbang.js';
+import { YtdlpExtractor } from './ytdlp.js';
 
 // Registry of all extractors
 const EXTRACTORS = [
@@ -77,6 +78,7 @@ const EXTRACTORS = [
   NineGagExtractor,
   EpornerExtractor,
   SpankBangExtractor,
+  YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
   DirectExtractor  // Always try direct URL last
 ];
 
@@ -165,6 +167,7 @@ export function listExtractors() {
     '9GAG':              '9gag.com (video posts)',
     'Eporner':           'eporner.com',
     'SpankBang':         'spankbang.com',
+    'yt-dlp':            'yt-dlp fallback (1000+ sites — requires yt-dlp installed)',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',
   };
 
@@ -179,4 +182,4 @@ export function listExtractors() {
   });
 }
 
-export { DirectExtractor, XHamsterExtractor, YouPornExtractor, RedTubeExtractor, Tube8Extractor, KVSExtractor, BrazzersExtractor };
+export { DirectExtractor, YtdlpExtractor, XHamsterExtractor, YouPornExtractor, RedTubeExtractor, Tube8Extractor, KVSExtractor, BrazzersExtractor };

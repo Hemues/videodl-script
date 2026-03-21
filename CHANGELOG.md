@@ -2,6 +2,19 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.30] - 2026-03-21
+
+### Added
+- **yt-dlp fallback extractor** — when no native extractor matches a URL, videodl-cli now
+  automatically delegates to `yt-dlp` (if installed) for metadata extraction and format selection
+  - Adds support for **1000+ additional sites** that yt-dlp covers
+  - Native extractors always take priority (faster, no external dependency)
+  - yt-dlp metadata (formats, subtitles, thumbnails) normalized to videodl-cli's internal format
+  - Supports cookies pass-through and HTTP headers from yt-dlp format info
+  - Graceful degradation: if yt-dlp is not on PATH, the extractor silently skips
+  - Registered just before DirectExtractor in the extractor chain
+- Updated EXTRACTORS.md with full 36-extractor list plus yt-dlp fallback documentation
+
 ## [2.0.10] - 2026-07-17
 
 ### Fixed

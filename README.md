@@ -60,7 +60,14 @@ A powerful CLI video downloader and converter with **35 built-in site extractors
 | UncensoredHentai | uncensoredhentai.xxx | Full support |
 | Brazzers | brazzers.com | Requires cookies |
 | KVS | KVS-powered sites | Generic KVS engine extractor |
+| **yt-dlp** | **1000+ additional sites** | **Fallback — requires `yt-dlp` installed** |
 | Direct URLs | any `.mp4`, `.mkv`, `.webm`, `.m3u8` | Fallback extractor |
+
+> **yt-dlp fallback:** When no native extractor matches a URL, videodl-cli automatically
+> delegates to [yt-dlp](https://github.com/yt-dlp/yt-dlp) if it is installed on the system.
+> This adds instant support for Bilibili, Niconico, Crunchyroll, Soundcloud, Bandcamp,
+> VK, OK.ru, Arte, BBC iPlayer, Patreon, Nebula, and many more.
+> Install with `pip install yt-dlp`. In the VideoDL container, yt-dlp is pre-installed.
 
 ## Prerequisites
 
