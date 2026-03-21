@@ -4,9 +4,11 @@
 
 videodl-cli now includes built-in extractors for popular video sites, similar to yt-dlp. This allows you to download videos from sites that don't provide direct download links.
 
+Additionally, when `yt-dlp` is installed on the system, videodl-cli automatically delegates to it as a fallback for **1000+ additional sites** that don't have a native extractor.
+
 ## Supported Sites
 
-21 built-in extractors:
+36 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -17,6 +19,18 @@ videodl-cli now includes built-in extractors for popular video sites, similar to
 - ✅ **Tube8** — full support
 - ✅ **Facebook** — facebook.com, fb.watch
 - ✅ **Vimeo** — full support
+- ✅ **Dailymotion** — dailymotion.com, dai.ly (CycleTLS)
+- ✅ **Twitch** — twitch.tv clips & VODs (GQL API)
+- ✅ **Reddit** — reddit.com, v.redd.it
+- ✅ **Twitter/X** — twitter.com, x.com (fxtwitter API)
+- ✅ **TikTok** — tiktok.com, vm.tiktok.com
+- ✅ **Instagram** — instagram.com (posts, reels, IGTV; requires cookies)
+- ✅ **Streamable** — streamable.com
+- ✅ **Rumble** — rumble.com
+- ✅ **Odysee** — odysee.com (LBRY API)
+- ✅ **9GAG** — 9gag.com (CycleTLS)
+- ✅ **Bitchute** — bitchute.com
+- ✅ **Imgur** — imgur.com (video/gifv)
 - ✅ **Indavideo** — indavideo.hu
 - ✅ **Videa** — videa.hu, videakid.hu
 - ✅ **Motherless** — full support
@@ -25,10 +39,39 @@ videodl-cli now includes built-in extractors for popular video sites, similar to
 - ✅ **TubeSafari** — xHamster embeds
 - ✅ **PornOne** — full support
 - ✅ **PornZog** — HClips embeds
+- ✅ **Eporner** — eporner.com
+- ✅ **SpankBang** — spankbang.com (CycleTLS)
 - ✅ **UncensoredHentai** — full support
 - ✅ **Brazzers** — cookie-authenticated
 - ✅ **KVS** — generic KVS engine (covers many sites)
+- 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
+
+## yt-dlp Fallback
+
+When no native extractor matches a URL, videodl-cli automatically delegates to `yt-dlp` if it is installed on the system. This provides instant support for all 1000+ sites that yt-dlp covers, including but not limited to:
+
+- **Bilibili**, **Niconico**, **Crunchyroll**, **Funimation**
+- **Soundcloud**, **Bandcamp**, **Mixcloud**
+- **Twitch** (live streams), **Kick**, **Afreeca**
+- **Vk.com**, **OK.ru**, **Rutube**
+- **Arte**, **BBC iPlayer**, **ITV**, **ZDF**, **ARD**
+- **CBS**, **NBC**, **ABC**, **CNN**, **MSNBC**
+- **Patreon**, **Nebula**, **CuriosityStream**
+- Many more (see `yt-dlp --list-extractors` for the full list)
+
+**How it works:**
+1. videodl-cli tries all 36 native extractors first (fast, no external dependency)
+2. If none match, it invokes `yt-dlp --dump-json` to extract metadata
+3. The format list and URLs from yt-dlp are normalized into videodl-cli's internal format
+4. The existing downloader handles the actual download using the URLs provided by yt-dlp
+
+**Installation:** In the VideoDL container, yt-dlp is pre-installed. For standalone use:
+```bash
+pip install yt-dlp
+# or
+pip install --user yt-dlp
+```
 
 ## Usage
 
@@ -214,9 +257,12 @@ videodl download "URL" -f 720p --no-ssl-verify
 videodl download "URL" -f 720p -H "Cookie: session=xxx"
 ```
 
-### Different Results than yt-dlp
+### yt-dlp Fallback Not Working
 
-yt-dlp uses complex extractors with multiple fallback methods. Our extractors are simpler and may not handle all edge cases. If yt-dlp fails too (like in your example), our extractor might also fail on that specific video.
+If the yt-dlp fallback extractor isn't activating:
+- Make sure `yt-dlp` is installed and on PATH: `yt-dlp --version`
+- The fallback only triggers when no native extractor matches the URL
+- In the VideoDL container, yt-dlp is pre-installed (`/opt/venv/bin/yt-dlp`)
 
 ## Adding New Extractors
 
