@@ -24,7 +24,11 @@ export class BingatoExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /bingato\.com\/item\//i.test(url);
+    return /bingato\.com\/(?:item\/|s\?|categories\/|models\/|tags\/)/i.test(url);
+  }
+
+  static _isListingUrl(url) {
+    return /bingato\.com\/(?:s\?|categories\/|models\/|tags\/)/i.test(url);
   }
 
   _decodeHtmlEntities(text) {
@@ -40,6 +44,10 @@ export class BingatoExtractor extends BaseExtractor {
 
   async extract(url, options = {}) {
     console.log(`[${this.name}] Extracting from: ${url}`);
+
+    if (BingatoExtractor._isListingUrl(url)) {
+      return this._extractListing(url, options);
+    }
 
     const cleanUrl = url.replace(/[?#].*$/, '');
 
@@ -135,6 +143,102 @@ export class BingatoExtractor extends BaseExtractor {
       title,
       formats,
       url: cleanUrl,
+      extractor: this.name,
+    };
+  }
+  /**
+   * Extract a playlist from a Bingato listing/search page.
+   * Follows pagination to collect all results.
+   */
+  async _extractListing(url, options = {}) {
+    console.log(`[${this.name}] Listing page detected: ${url}`);
+
+    const entries = [];
+    const seen = new Set();
+    const visited = new Set();
+
+    const collectFromHtml = (h) => {
+      const re = /<a\s+[^>]*href="(\/item\/([^"]+))"[^>]*title="([^"]*)"[^>]*>/gi;
+      let m;
+      while ((m = re.exec(h)) !== null) {
+        const path = m[1];
+        const slug = m[2];
+        const title = this._decodeHtmlEntities(m[3]).trim();
+        const idMatch = slug.match(/(\d+)$/);
+        const videoId = idMatch ? idMatch[1] : slug;
+        if (seen.has(videoId)) continue;
+        seen.add(videoId);
+        entries.push({
+          _type: 'video',
+          id: videoId,
+          title: title || slug,
+          url: `https://bingato.com${path}`,
+          webpage_url: `https://bingato.com${path}`,
+          extractor: this.name,
+        });
+      }
+    };
+
+    const fetchPage = async (pageUrl) => {
+      if (visited.has(pageUrl)) return '';
+      visited.add(pageUrl);
+      const resp = await got(pageUrl, {
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Accept': 'text/html',
+          'Referer': 'https://bingato.com/',
+        },
+        timeout: { request: 30000 },
+        followRedirect: true,
+      });
+      return resp.body;
+    };
+
+    // Fetch first page
+    const html = await fetchPage(url);
+    collectFromHtml(html);
+
+    // Extract page title
+    let pageTitle = null;
+    const titleTag = html.match(/<title>\s*([^<]+?)\s*<\/title>/i);
+    if (titleTag) {
+      pageTitle = this._decodeHtmlEntities(titleTag[1])
+        .replace(/\s*[-|]\s*Bingato.*$/i, '')
+        .trim();
+    }
+    if (!pageTitle) pageTitle = 'Bingato Search';
+
+    // Follow pagination (?page=N)
+    const pageRe = /href="([^"]*[?&]page=\d+[^"]*)"/gi;
+    const paginationLinks = new Set();
+    let pm;
+    while ((pm = pageRe.exec(html)) !== null) {
+      let href = pm[1];
+      if (href.startsWith('/')) href = 'https://bingato.com' + href;
+      paginationLinks.add(href);
+    }
+
+    for (const pageUrl of paginationLinks) {
+      try {
+        console.log(`[${this.name}] Fetching page: ${pageUrl}`);
+        const pageHtml = await fetchPage(pageUrl);
+        collectFromHtml(pageHtml);
+      } catch (e) {
+        console.log(`[${this.name}] Could not fetch ${pageUrl}: ${e.message}`);
+      }
+    }
+
+    console.log(`[${this.name}] Found ${entries.length} video(s) on listing page`);
+
+    if (entries.length === 0) {
+      throw new Error('No videos found on listing page');
+    }
+
+    return {
+      _type: 'playlist',
+      title: pageTitle,
+      entries,
+      url,
       extractor: this.name,
     };
   }

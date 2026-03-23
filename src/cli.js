@@ -436,6 +436,7 @@ program
 
       const downloadOptions = {
         url: selectedFormat.url,
+        fallbackUrl: selectedFormat.fallbackUrl, // Direct CDN URL for 403 retry
         filename: filename,
         directory: options.directory,
         headers: options.header,
@@ -1059,6 +1060,7 @@ program
           bitrate: fmt.bitrate || null,
           protocol: fmt.protocol || 'https',
           headers: fmt.headers || null,
+          fallbackUrl: fmt.fallbackUrl || null,
           cfProtected: !!fmt.cfProtected,
           _hlsPlaylist: fmt._hlsPlaylist || null,
         })),
@@ -1313,7 +1315,8 @@ program
               await downloader.downloadHLS(dlOpts);
             } else {
               await downloader.download({
-                url: entrySelectedFormat.url, filename: entryFilename, directory: playlistDir,
+                url: entrySelectedFormat.url, fallbackUrl: entrySelectedFormat.fallbackUrl,
+                filename: entryFilename, directory: playlistDir,
                 headers: options.header, formatHeaders: entrySelectedFormat.headers,
                 rejectUnauthorized: options.sslVerify, cookies,
               });
@@ -1569,7 +1572,8 @@ program
         await downloader.downloadHLS(dlOpts);
       } else {
         await downloader.download({
-          url: selectedFormat.url, filename, directory: options.directory,
+          url: selectedFormat.url, fallbackUrl: selectedFormat.fallbackUrl,
+          filename, directory: options.directory,
           headers: options.header, formatHeaders: selectedFormat.headers,
           rejectUnauthorized: options.sslVerify, cookies,
         });

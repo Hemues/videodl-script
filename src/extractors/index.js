@@ -43,6 +43,7 @@ import { NoodleMagazineExtractor } from './noodlemagazine.js';
 import { AShemaleTubeExtractor } from './ashemaletube.js';
 import { EromeExtractor } from './erome.js';
 import { BingatoExtractor } from './bingato.js';
+import { Mat6tubeExtractor } from './mat6tube.js';
 import { YtdlpExtractor } from './ytdlp.js';
 
 // Registry of all extractors
@@ -86,6 +87,7 @@ const EXTRACTORS = [
   AShemaleTubeExtractor,
   EromeExtractor,
   BingatoExtractor,
+  Mat6tubeExtractor,
   YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
   DirectExtractor  // Always try direct URL last
 ];
@@ -177,6 +179,7 @@ export function listExtractors() {
     'SpankBang':         'spankbang.com',
     'NoodleMagazine':    'noodlemagazine.com',
     'AShemaleTube':      'ashemaletube.com',
+    'Mat6tube':          'mat6tube.com (JWPlayer, pvvstream CDN)',
     'yt-dlp':            'yt-dlp fallback (1000+ sites — requires yt-dlp installed)',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',
   };
