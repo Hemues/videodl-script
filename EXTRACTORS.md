@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-36 built-in extractors + yt-dlp fallback:
+37 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -44,6 +44,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **UncensoredHentai** — full support
 - ✅ **Brazzers** — cookie-authenticated
 - ✅ **KVS** — generic KVS engine (covers many sites)
+- ✅ **NoodleMagazine** — noodlemagazine.com
 - 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
 
