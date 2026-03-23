@@ -39,6 +39,7 @@ import { ImgurExtractor } from './imgur.js';
 import { NineGagExtractor } from './9gag.js';
 import { EpornerExtractor } from './eporner.js';
 import { SpankBangExtractor } from './spankbang.js';
+import { NoodleMagazineExtractor } from './noodlemagazine.js';
 import { YtdlpExtractor } from './ytdlp.js';
 
 // Registry of all extractors
@@ -78,6 +79,7 @@ const EXTRACTORS = [
   NineGagExtractor,
   EpornerExtractor,
   SpankBangExtractor,
+  NoodleMagazineExtractor,
   YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
   DirectExtractor  // Always try direct URL last
 ];
@@ -167,6 +169,7 @@ export function listExtractors() {
     '9GAG':              '9gag.com (video posts)',
     'Eporner':           'eporner.com',
     'SpankBang':         'spankbang.com',
+    'NoodleMagazine':    'noodlemagazine.com',
     'yt-dlp':            'yt-dlp fallback (1000+ sites — requires yt-dlp installed)',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',
   };
