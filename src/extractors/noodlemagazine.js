@@ -9,7 +9,11 @@
  *   4. Extract video source URLs from the player page (JSON config,
  *      <source> tags, or JS variables).
  *
- * URL format: https://noodlemagazine.com/watch/-OWNERID_VIDEOID
+ * URL formats:
+ *   Watch:   https://noodlemagazine.com/watch/-OWNERID_VIDEOID
+ *   Listing: https://noodlemagazine.com/video/QUERY?p=N
+ *
+ * Listing pages return a playlist of /watch/ URLs found on the page.
  */
 
 import { BaseExtractor } from './base.js';
@@ -27,7 +31,11 @@ export class NoodleMagazineExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /noodlemagazine\.com\/watch\//i.test(url);
+    return /noodlemagazine\.com\/(?:watch|video)\//i.test(url);
+  }
+
+  static _isListingUrl(url) {
+    return /noodlemagazine\.com\/video\//i.test(url);
   }
 
   _decodeHtmlEntities(text) {
@@ -149,7 +157,92 @@ export class NoodleMagazineExtractor extends BaseExtractor {
     return await resp.text();
   }
 
+  /**
+   * Extract a listing page: scrape all /watch/ links and return a playlist.
+   */
+  async _extractListing(url, options) {
+    console.log(`[${this.name}] Listing page detected: ${url}`);
+
+    const { createCycleTLS } = await import('../cycletls-helper.js');
+    const cycleTLS = await createCycleTLS();
+
+    try {
+      const html = await this._fetchPage(cycleTLS, url, 'https://noodlemagazine.com/');
+      if (!html || html.length < 500) {
+        throw new Error(`Listing page returned insufficient content (${html?.length || 0} bytes)`);
+      }
+
+      // Page title (e.g. "Vicats - found videos")
+      let title = null;
+      const titleMatch = html.match(/<title>\s*([^<]+?)\s*<\/title>/i);
+      if (titleMatch) {
+        title = this._decodeHtmlEntities(titleMatch[1])
+          .replace(/\s*[-|]\s*NoodleMagazine.*$/i, '')
+          .trim();
+      }
+      if (!title) title = 'NoodleMagazine playlist';
+
+      // Collect video items from <div class="item"> blocks
+      const entries = [];
+      const seen = new Set();
+
+      // Each item: <a href="/watch/ID" ...>...<div class="title">TITLE</div>...</a>
+      const itemRe = /<a\s+href="(\/watch\/[^"]+)"[^>]*class="item_link"[^>]*>[\s\S]*?<div\s+class="title">([^<]+)<\/div>[\s\S]*?<\/a>/gi;
+      let m;
+      while ((m = itemRe.exec(html)) !== null) {
+        const watchPath = m[1];
+        if (seen.has(watchPath)) continue;
+        seen.add(watchPath);
+        entries.push({
+          _type: 'video',
+          id: watchPath.replace('/watch/', ''),
+          title: this._decodeHtmlEntities(m[2]).trim(),
+          url: `https://noodlemagazine.com${watchPath}`,
+          webpage_url: `https://noodlemagazine.com${watchPath}`,
+          extractor: this.name,
+        });
+      }
+
+      // Fallback: any /watch/ link not yet seen (without title)
+      const linkRe = /href="(\/watch\/[^"]+)"/gi;
+      while ((m = linkRe.exec(html)) !== null) {
+        const watchPath = m[1];
+        if (seen.has(watchPath)) continue;
+        seen.add(watchPath);
+        entries.push({
+          _type: 'video',
+          id: watchPath.replace('/watch/', ''),
+          title: watchPath.replace('/watch/', ''),
+          url: `https://noodlemagazine.com${watchPath}`,
+          webpage_url: `https://noodlemagazine.com${watchPath}`,
+          extractor: this.name,
+        });
+      }
+
+      console.log(`[${this.name}] Found ${entries.length} video(s) on listing page`);
+
+      if (entries.length === 0) {
+        throw new Error('No video links found on listing page');
+      }
+
+      return {
+        _type: 'playlist',
+        title,
+        entries,
+        url,
+        extractor: this.name,
+      };
+    } finally {
+      cycleTLS.exit();
+    }
+  }
+
   async extract(url, options = {}) {
+    // Route listing/search pages to playlist extraction
+    if (NoodleMagazineExtractor._isListingUrl(url)) {
+      return this._extractListing(url, options);
+    }
+
     console.log(`[${this.name}] Extracting from: ${url}`);
 
     const idMatch = url.match(/\/watch\/([^\/?#]+)/);

@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-39 built-in extractors + yt-dlp fallback:
+40 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -47,6 +47,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **NoodleMagazine** — noodlemagazine.com
 - ✅ **AShemaleTube** — ashemaletube.com (HLS, CycleTLS)
 - ✅ **Erome** — erome.com (album pages, direct MP4)
+- ✅ **Bingato** — bingato.com (direct MP4)
 - 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
 
@@ -64,7 +65,7 @@ When no native extractor matches a URL, videodl-cli automatically delegates to `
 - Many more (see `yt-dlp --list-extractors` for the full list)
 
 **How it works:**
-1. videodl-cli tries all 39 native extractors first (fast, no external dependency)
+1. videodl-cli tries all 40 native extractors first (fast, no external dependency)
 2. If none match, it invokes `yt-dlp --dump-json` to extract metadata
 3. The format list and URLs from yt-dlp are normalized into videodl-cli's internal format
 4. The existing downloader handles the actual download using the URLs provided by yt-dlp
