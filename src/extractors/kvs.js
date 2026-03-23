@@ -154,10 +154,10 @@ export class KVSExtractor extends BaseExtractor {
     if (!title) title = `KVS_video`;
     console.log(`[${this.name}] Title: ${title}`);
 
-    // Find flashvars block
+    // Find flashvars block — if absent, this is a listing/model/category page
     const fvMatch = html.match(/var\s+flashvars\s*=\s*\{([\s\S]*?)\}\s*;/);
     if (!fvMatch) {
-      throw new Error('Could not find flashvars in page (not a KVS site?)');
+      return this._extractListing(html, url, origin, title);
     }
     const fvBlock = fvMatch[1];
 
@@ -246,6 +246,85 @@ export class KVSExtractor extends BaseExtractor {
       id: videoId,
       title,
       formats,
+      url,
+      extractor: this.name,
+    };
+  }
+
+  /**
+   * Extract a playlist from a KVS listing page (model, category, tag, etc.).
+   * Collects all <a href="/videos/ID/slug/" title="Title"> links on the page,
+   * including subsequent pages if pagination is present.
+   */
+  async _extractListing(html, url, origin, pageTitle) {
+    console.log(`[${this.name}] Listing page detected: ${url}`);
+
+    const entries = [];
+    const seen = new Set();
+
+    const collectFromHtml = (h) => {
+      // KVS listing items: <a href="https://site/videos/ID/slug/" title="Title">
+      const re = /<a\s+[^>]*href="((?:https?:\/\/[^"]*)?\/videos\/(\d+)\/[^"]*)"[^>]*title="([^"]*)"[^>]*>/gi;
+      let m;
+      while ((m = re.exec(h)) !== null) {
+        const videoUrl = m[1].startsWith('http') ? m[1] : origin + m[1];
+        const videoId = m[2];
+        if (seen.has(videoId)) continue;
+        seen.add(videoId);
+        entries.push({
+          _type: 'video',
+          id: videoId,
+          title: this._decodeHtmlEntities(m[3]).trim(),
+          url: videoUrl,
+          webpage_url: videoUrl,
+          extractor: this.name,
+        });
+      }
+    };
+
+    collectFromHtml(html);
+
+    // Follow pagination links (KVS uses /models/name/N/ or ?from=N patterns)
+    const pageRe = /<a\s+[^>]*href="([^"]+)"[^>]*class="[^"]*(?:(?<!["\w])page(?!["\w]))[^"]*"[^>]*>|<a\s+[^>]*class="[^"]*(?:(?<!["\w])page(?!["\w]))[^"]*"[^>]*href="([^"]+)"/gi;
+    const paginationLinks = new Set();
+    let pm;
+    while ((pm = pageRe.exec(html)) !== null) {
+      paginationLinks.add(pm[1] || pm[2]);
+    }
+    // Also check for "next" links or numbered page links in pagination div
+    const paginationM = html.match(/<div class="pagination[^"]*">([\s\S]*?)<\/div>/i);
+    if (paginationM) {
+      const pLinkRe = /href="([^"]+)"/gi;
+      while ((pm = pLinkRe.exec(paginationM[1])) !== null) {
+        const href = pm[1].startsWith('http') ? pm[1] : origin + pm[1];
+        if (href !== url) paginationLinks.add(href);
+      }
+    }
+
+    for (const pageUrl of paginationLinks) {
+      try {
+        console.log(`[${this.name}] Fetching page: ${pageUrl}`);
+        const resp = await got(pageUrl, {
+          headers: { ...HEADERS, Referer: url },
+          timeout: { request: 30000 },
+          followRedirect: true,
+        });
+        collectFromHtml(resp.body);
+      } catch (e) {
+        console.log(`[${this.name}] Could not fetch page ${pageUrl}: ${e.message}`);
+      }
+    }
+
+    console.log(`[${this.name}] Found ${entries.length} video(s) on listing page`);
+
+    if (entries.length === 0) {
+      throw new Error('No videos found on listing page');
+    }
+
+    return {
+      _type: 'playlist',
+      title: pageTitle,
+      entries,
       url,
       extractor: this.name,
     };

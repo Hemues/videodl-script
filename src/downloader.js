@@ -95,19 +95,49 @@ export class VideoDownloader extends EventEmitter {
     try {
       this.emit('start', { url: options.url, filepath });
 
-      const downloadedSize = await this._downloadStream(options.url, filepath, {
-        headers: mergedHeaders,
-        cookies: options.cookies,
-        rejectUnauthorized: options.rejectUnauthorized
-      }, (downloaded, total) => {
-        this.emit('progress', {
-          url: options.url,
-          filepath,
-          downloaded,
-          total,
-          percent: total > 0 ? (downloaded / total * 100) : 0
+      let downloadedSize;
+      try {
+        downloadedSize = await this._downloadStream(options.url, filepath, {
+          headers: mergedHeaders,
+          cookies: options.cookies,
+          rejectUnauthorized: options.rejectUnauthorized
+        }, (downloaded, total) => {
+          this.emit('progress', {
+            url: options.url,
+            filepath,
+            downloaded,
+            total,
+            percent: total > 0 ? (downloaded / total * 100) : 0
+          });
         });
-      });
+      } catch (primaryErr) {
+        // If the CDN returns 403 and a fallback URL is available (e.g. direct
+        // VK/OK CDN bypassing a proxy that blocks datacenter IPs), retry there.
+        if (/\b403\b/.test(primaryErr.message) && options.fallbackUrl) {
+          console.error(`[download] CDN returned 403, retrying via direct CDN URL...`);
+          try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {}
+          try {
+            downloadedSize = await this._downloadStream(options.fallbackUrl, filepath, {
+              headers: mergedHeaders,
+              cookies: options.cookies,
+              rejectUnauthorized: options.rejectUnauthorized
+            }, (downloaded, total) => {
+              this.emit('progress', {
+                url: options.fallbackUrl,
+                filepath,
+                downloaded,
+                total,
+                percent: total > 0 ? (downloaded / total * 100) : 0
+              });
+            });
+          } catch {
+            // Fallback also failed — throw original 403 error
+            throw primaryErr;
+          }
+        } else {
+          throw primaryErr;
+        }
+      }
 
       this.emit('complete', {
         url: options.url,

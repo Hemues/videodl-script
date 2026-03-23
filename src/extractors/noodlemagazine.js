@@ -130,7 +130,7 @@ export class NoodleMagazineExtractor extends BaseExtractor {
   }
 
   _makeFormat(url, height, ext, referer) {
-    return {
+    const fmt = {
       quality: height > 0 ? `${height}p` : 'default',
       url,
       format_id: height > 0 ? `${ext}-${height}p` : `${ext}-default`,
@@ -139,8 +139,42 @@ export class NoodleMagazineExtractor extends BaseExtractor {
       width: height > 0 ? Math.round(height * 16 / 9) : 0,
       hasVideo: true,
       hasAudio: true,
-      headers: { Referer: referer, 'User-Agent': USER_AGENT },
+      headers: {
+        Referer: referer,
+        Origin: new URL(referer).origin,
+        'User-Agent': USER_AGENT,
+        'Accept': '*/*',
+        'Sec-Fetch-Dest': 'video',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site',
+      },
     };
+    // pvvstream.pro proxy CDN URLs encode the real VK/OK CDN URL in a base64
+    // `url` query param.  Provide it as a fallback so the downloader can
+    // retry on the direct CDN when the proxy returns 403.
+    const directUrl = NoodleMagazineExtractor._decodeProxyCdnUrl(url);
+    if (directUrl) fmt.fallbackUrl = directUrl;
+    return fmt;
+  }
+
+  /**
+   * Decode a pvvstream.pro proxy CDN URL to the direct VK/OK CDN URL.
+   * Returns null if the URL is not a pvvstream proxy or cannot be decoded.
+   */
+  static _decodeProxyCdnUrl(proxyUrl) {
+    try {
+      const u = new URL(proxyUrl);
+      if (!u.hostname.includes('pvvstream')) return null;
+      const encoded = u.searchParams.get('url');
+      if (!encoded) return null;
+      // URL-safe base64 → standard base64
+      const b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = Buffer.from(b64, 'base64').toString('utf8');
+      if (!decoded || !decoded.includes('.')) return null;
+      return 'https://' + decoded;
+    } catch {
+      return null;
+    }
   }
 
   async _fetchPage(cycleTLS, pageUrl, referer) {
