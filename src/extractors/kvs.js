@@ -33,6 +33,7 @@ const HEADERS = {
 // Known KVS-powered domains
 const KVS_DOMAINS = [
   /blowjobs\.pro/i,
+  /tgtsporn\.com/i,
 ];
 
 export class KVSExtractor extends BaseExtractor {
