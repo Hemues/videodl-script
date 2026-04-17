@@ -17,6 +17,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 6. [Cookie Extraction via Puppeteer](#6--cookie-extraction-via-puppeteer)
 7. [xHamster HLS Download Stuck — No Progress Events](#7--xhamster-hls-download-stuck--no-progress-events)
 8. [Dailymotion Quality Label Mismatch](#8--dailymotion-quality-label-mismatch)
+9. [AShemaleTube embed format change](#9--ashemaletube-embed-format-change)
 
 ---
 
@@ -186,3 +187,32 @@ label string.
 **Fix:**
 Use Dailymotion's quality labels directly instead of trying to infer resolution
 from pixel dimensions.
+
+---
+
+## #9 — AShemaleTube embed format change
+
+**Status:** ✅ VERIFIED
+
+**Symptom:**
+AShemaleTube downloads reported no formats found, even though the page title and
+embed iframe were still present.
+
+**Root Cause:**
+The site switched from the legacy `var sources = [...]` embed format to a
+single `playerConfig.sources.hlsAuto` HLS master playlist URL. The URL path
+contains a `/multi=WxH:key,.../` descriptor and the `_TPL_.mp4` token is
+literal, not a substitution placeholder.
+
+**Fix:**
+Updated the AShemaleTube extractor to:
+- parse `playerConfig.sources.hlsAuto` from the embed page,
+- decode the JSON-escaped URL string,
+- enumerate quality renditions from the `/multi=.../` segment,
+- expose explicit HLS format entries for each available resolution,
+- preserve the legacy `var sources = [...]` fallback for older embeds.
+
+**Verification:**
+Tested successfully with `https://www.ashemaletube.com/videos/1163113/best-friends/`.
+
+**Last update:** 2026-04-17

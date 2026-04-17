@@ -2,6 +2,14 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [Unreleased] - 2026-04-17
+
+### Fixed
+- AShemaleTube extractor now supports the new `playerConfig.sources.hlsAuto` embed format.
+  - Parses the HLS master playlist URL from `playerConfig`.
+  - Preserves the legacy `var sources = [...]` fallback for older embed pages.
+  - Adds renditions from the `/multi=WxH:key,.../` segment as explicit HLS quality entries.
+
 ## [2.0.30] - 2026-03-21
 
 ### Added

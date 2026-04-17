@@ -58,6 +58,7 @@ A powerful CLI video downloader and converter with **35 built-in site extractors
 | PornOne | pornone.com | Full support |
 | PornZog | pornzog.com | HClips embeds |
 | UncensoredHentai | uncensoredhentai.xxx | Full support |
+| AShemaleTube | ashemaletube.com | HLS streaming, CycleTLS |
 | Brazzers | brazzers.com | Requires cookies |
 | KVS | KVS-powered sites | Generic KVS engine extractor |
 | **yt-dlp** | **1000+ additional sites** | **Fallback — requires `yt-dlp` installed** |

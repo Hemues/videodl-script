@@ -7,7 +7,10 @@
  *   2. Extract og:title from main page.
  *   3. Find /embed/{id}/{hash}/{w}/{h}/ iframe URL.
  *   4. Fetch embed page via cycletls.
- *   5. Parse `var sources = [...]` for HLS stream URLs with quality labels.
+ *   5. Parse `var playerConfig = { sources: { hlsAuto: "..." } }` — a single
+ *      HLS master playlist URL. The URL path contains `_TPL_` as a LITERAL
+ *      token (not a substitution placeholder) and a `multi=WxH:key,...`
+ *      segment that enumerates the available rendition resolutions.
  *
  * URL format: https://www.ashemaletube.com/videos/{id}/{slug}/
  */
@@ -103,43 +106,117 @@ export class AShemaleTubeExtractor extends BaseExtractor {
       // 3. Fetch embed page
       const embedHtml = await this._fetchPage(cycleTLS, embedUrl, cleanUrl);
 
-      // 4. Parse var sources = [...] array
-      const sourcesMatch = embedHtml.match(/var\s+sources\s*=\s*(\[[\s\S]*?\]);/);
-      if (!sourcesMatch) {
-        throw new Error('Could not find sources array in embed page');
+      // 4. Parse playerConfig.sources.hlsAuto — a single HLS master playlist.
+      //    The master URL has a `/multi=WxH:key,WxH:key,.../` segment that
+      //    enumerates the available renditions; we use it to build per-quality
+      //    format entries all pointing at the same master playlist.
+      let hlsAutoUrl = null;
+      const playerConfigMatch = embedHtml.match(/var\s+playerConfig\s*=\s*\{([\s\S]*?)\n\s*\}\s*;/);
+      if (playerConfigMatch) {
+        const cfg = playerConfigMatch[1];
+        const hlsAutoMatch = cfg.match(/['"]hlsAuto['"]\s*:\s*"((?:\\.|[^"\\])*)"/);
+        if (hlsAutoMatch) {
+          // Decode JSON-escaped slashes etc.
+          hlsAutoUrl = hlsAutoMatch[1].replace(/\\\//g, '/').replace(/\\"/g, '"');
+        }
       }
 
-      let sourcesArr;
-      try {
-        sourcesArr = JSON.parse(sourcesMatch[1]);
-      } catch {
-        throw new Error('Failed to parse sources JSON from embed page');
+      // Legacy fallback: older embeds used `var sources = [...]`
+      let legacySources = null;
+      if (!hlsAutoUrl) {
+        const sourcesMatch = embedHtml.match(/var\s+sources\s*=\s*(\[[\s\S]*?\]);/);
+        if (sourcesMatch) {
+          try {
+            legacySources = JSON.parse(sourcesMatch[1]);
+          } catch {
+            throw new Error('Failed to parse sources JSON from embed page');
+          }
+        }
+      }
+
+      if (!hlsAutoUrl && !legacySources) {
+        throw new Error('Could not find playerConfig.sources or legacy sources array in embed page');
       }
 
       const formats = [];
-      for (const source of sourcesArr) {
-        const src = source.src;
-        if (!src) continue;
 
-        const desc = source.desc || 'default';
-        const height = parseInt(desc) || 0;
-        const isHls = source.hls === true || source.format === 'hls';
+      if (hlsAutoUrl) {
+        // Enumerate renditions from the /multi=WxH:key,.../ segment.
+        const multiMatch = hlsAutoUrl.match(/\/multi=([^\/]+)\//);
+        const renditions = [];
+        if (multiMatch) {
+          const parts = multiMatch[1].split(',');
+          for (const part of parts) {
+            const m = part.match(/^(\d+)x(\d+):/);
+            if (m) {
+              renditions.push({ width: parseInt(m[1], 10), height: parseInt(m[2], 10) });
+            }
+          }
+        }
 
-        formats.push({
-          quality: height > 0 ? `${height}p` : desc,
-          url: src,
-          format_id: `${isHls ? 'hls' : 'mp4'}-${height > 0 ? height + 'p' : desc}`,
-          ext: 'mp4',
-          height,
-          width: height > 0 ? Math.round(height * 16 / 9) : 0,
-          protocol: isHls ? 'hls' : 'https',
-          hasVideo: true,
-          hasAudio: true,
-          headers: {
-            Referer: 'https://www.ashemaletube.com/',
-            'User-Agent': USER_AGENT,
-          },
-        });
+        if (renditions.length === 0) {
+          // Unknown rendition list — expose a single "auto" HLS format; the
+          // downloader will pick a variant from the master playlist.
+          formats.push({
+            quality: 'auto',
+            url: hlsAutoUrl,
+            format_id: 'hls-auto',
+            ext: 'mp4',
+            height: 0,
+            width: 0,
+            protocol: 'hls',
+            hasVideo: true,
+            hasAudio: true,
+            headers: {
+              Referer: 'https://www.ashemaletube.com/',
+              'User-Agent': USER_AGENT,
+            },
+          });
+        } else {
+          for (const r of renditions) {
+            formats.push({
+              quality: `${r.height}p`,
+              url: hlsAutoUrl,
+              format_id: `hls-${r.height}p`,
+              ext: 'mp4',
+              height: r.height,
+              width: r.width,
+              protocol: 'hls',
+              hasVideo: true,
+              hasAudio: true,
+              headers: {
+                Referer: 'https://www.ashemaletube.com/',
+                'User-Agent': USER_AGENT,
+              },
+            });
+          }
+        }
+      } else {
+        // Legacy `var sources = [...]` path
+        for (const source of legacySources) {
+          const src = source.src;
+          if (!src) continue;
+
+          const desc = source.desc || 'default';
+          const height = parseInt(desc) || 0;
+          const isHls = source.hls === true || source.format === 'hls';
+
+          formats.push({
+            quality: height > 0 ? `${height}p` : desc,
+            url: src,
+            format_id: `${isHls ? 'hls' : 'mp4'}-${height > 0 ? height + 'p' : desc}`,
+            ext: 'mp4',
+            height,
+            width: height > 0 ? Math.round(height * 16 / 9) : 0,
+            protocol: isHls ? 'hls' : 'https',
+            hasVideo: true,
+            hasAudio: true,
+            headers: {
+              Referer: 'https://www.ashemaletube.com/',
+              'User-Agent': USER_AGENT,
+            },
+          });
+        }
       }
 
       // Sort by height descending
