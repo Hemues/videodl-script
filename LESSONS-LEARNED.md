@@ -19,6 +19,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 8. [Dailymotion Quality Label Mismatch](#8--dailymotion-quality-label-mismatch)
 9. [AShemaleTube embed format change](#9--ashemaletube-embed-format-change)
 10. [Release artifacts belong in GitHub Releases, not git](#10--release-artifacts-belong-in-github-releases-not-git)
+11. [SEA binaries must be built with official Node.js binary](#11--sea-binaries-must-be-built-with-official-nodejs-binary)
 
 ---
 
@@ -233,10 +234,40 @@ Binaries are uploaded as GitHub Release assets, completely outside the git tree.
 1. Bump version in `package.json`.
 2. Update `CHANGELOG.md` header from `[Unreleased]` to the new version.
 3. Commit and push version bump.
-4. Build: `npm run build` + `npm run build:linux`.
-5. Create release: `gh release create v<VERSION> --title v<VERSION> --notes-file <notes> dist/videodl.exe dist/videodl-linux dist/videodl-ffmpeg.exe dist/videodl-ffmpeg-linux dist/videodl.cjs dist/index.exe dist/index dist/cycletls-index-linux`.
+4. Build Linux binaries on server: `VIDEODL_SEA_NODE=dist/node-official node build.mjs --linux --package`.
+5. Build Windows binaries locally: `npm run build`.
+6. Create release: `gh release create v<VERSION> --title v<VERSION> --notes-file <notes> dist/videodl.exe dist/videodl-linux dist/videodl-ffmpeg.exe dist/videodl-ffmpeg-linux dist/videodl.cjs dist/index.exe dist/index dist/cycletls-index-linux`.
+7. **Verify** uploaded binary: download from release and check `--version` output matches.
 
 **Key insight:** The `gh` CLI must be authenticated (`gh auth login`). On the NAS (11.1.0.2:60001),
 root has a valid token at `/root/.config/gh/hosts.yml`. Run via `sudo bash -c '...'`.
+
+**Last update:** 2026-04-17
+
+## #11 — SEA binaries must be built with official Node.js binary
+
+**Status:** ✅ Verified
+
+**Problem:** Distro-packaged Node.js binaries (e.g. Fedora/RHEL `node-22`, 28 KB wrapper)
+lack the `NODE_SEA_FUSE` sentinel required for Single Executable Application (SEA) injection.
+Running `npm run build:linux` with the distro node fails with:
+```
+Error: Could not find the sentinel NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 in the binary
+```
+
+**Solution:** Download the official Node.js binary from https://nodejs.org and use it
+via the `VIDEODL_SEA_NODE` environment variable:
+```bash
+# The official binary is stored at dist/node-official (~123 MB)
+VIDEODL_SEA_NODE=dist/node-official node build.mjs --linux --package
+```
+
+**Critical:** Always verify the built binary version matches expectations after upload:
+```bash
+curl -fSL -o /tmp/test https://github.com/Hemues/videodl-script/releases/download/v<VER>/videodl-ffmpeg-linux
+chmod +x /tmp/test && /tmp/test --version
+```
+The version stamp is baked in at build time from `package.json`. If you bump the version
+AFTER building, the binary will report the old version — rebuild after the bump.
 
 **Last update:** 2026-04-17
