@@ -140,7 +140,22 @@ The setup scripts check for Node.js and ffmpeg, install dependencies, and option
 
 ### Standalone Binary
 
-Pre-built binaries require no Node.js — see [Building Standalone Binaries](#building-standalone-binaries).
+Pre-built binaries require no Node.js installation. Download the latest release from the [GitHub Releases](https://github.com/Hemues/videodl-script/releases) page, or build from source — see [Building Standalone Binaries](#building-standalone-binaries).
+
+### Releases
+
+Compiled binaries are published as GitHub Release assets (not tracked in git):
+
+| Asset | Description |
+|-------|-------------|
+| `videodl.exe` | Windows x64 binary (downloads ffmpeg on first use) |
+| `videodl-linux` | Linux x64 binary (downloads ffmpeg on first use) |
+| `videodl-ffmpeg.exe` | Windows standalone with embedded ffmpeg |
+| `videodl-ffmpeg-linux` | Linux standalone with embedded ffmpeg |
+| `videodl.cjs` | Bundled Node.js script (requires Node.js 20+) |
+| `index.exe` / `index` / `cycletls-index-linux` | CycleTLS TLS-fingerprint helper binaries |
+
+Download from: **https://github.com/Hemues/videodl-script/releases**
 
 ## Usage
 

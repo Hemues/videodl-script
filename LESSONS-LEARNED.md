@@ -18,6 +18,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 7. [xHamster HLS Download Stuck — No Progress Events](#7--xhamster-hls-download-stuck--no-progress-events)
 8. [Dailymotion Quality Label Mismatch](#8--dailymotion-quality-label-mismatch)
 9. [AShemaleTube embed format change](#9--ashemaletube-embed-format-change)
+10. [Release artifacts belong in GitHub Releases, not git](#10--release-artifacts-belong-in-github-releases-not-git)
 
 ---
 
@@ -214,5 +215,28 @@ Updated the AShemaleTube extractor to:
 
 **Verification:**
 Tested successfully with `https://www.ashemaletube.com/videos/1163113/best-friends/`.
+
+**Last update:** 2026-04-17
+
+## #10 — Release artifacts belong in GitHub Releases, not git
+
+**Status:** ✅ Verified
+
+**Problem:** Committing compiled binaries (90–320 MB each) to the git repository causes push failures
+(GitHub rejects files > 100 MB) and bloats the repo history. Git LFS is an option but adds
+complexity, especially on network-share repos with "dubious ownership" issues.
+
+**Solution:** Use `gh release create` from a machine where the GitHub CLI is authenticated.
+Binaries are uploaded as GitHub Release assets, completely outside the git tree.
+
+**Release process:**
+1. Bump version in `package.json`.
+2. Update `CHANGELOG.md` header from `[Unreleased]` to the new version.
+3. Commit and push version bump.
+4. Build: `npm run build` + `npm run build:linux`.
+5. Create release: `gh release create v<VERSION> --title v<VERSION> --notes-file <notes> dist/videodl.exe dist/videodl-linux dist/videodl-ffmpeg.exe dist/videodl-ffmpeg-linux dist/videodl.cjs dist/index.exe dist/index dist/cycletls-index-linux`.
+
+**Key insight:** The `gh` CLI must be authenticated (`gh auth login`). On the NAS (11.1.0.2:60001),
+root has a valid token at `/root/.config/gh/hosts.yml`. Run via `sudo bash -c '...'`.
 
 **Last update:** 2026-04-17
