@@ -2,7 +2,7 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
-## [Unreleased] - 2026-04-17
+## [2.0.52] - 2026-04-17
 
 ### Fixed
 - AShemaleTube extractor now supports the new `playerConfig.sources.hlsAuto` embed format.
