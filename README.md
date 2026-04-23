@@ -211,18 +211,18 @@ By default, **English + Hungarian** subtitles are downloaded and embedded
 into the output container (`.mkv` for multi-track merges, `.mp4` otherwise).
 For each language the CLI follows this fallback chain:
 
-1. Official / manually authored track in that language.
+1. Official / manually authored track in that language. Matching is
+   case-insensitive and also accepts display-name aliases — for
+   example a track uploaded under the name "Magyar" counts as `hu`.
 2. Auto-generated (ASR) track in that language if no manual track exists.
-3. YouTube's auto-translate API if neither native track exists.
-4. Skip (nothing available).
+3. Skip (nothing downloaded for that language).
 
-This means: if a video has an English official caption, that is used;
-if it has Hungarian only as auto-generated, that is used; if Hungarian is
-missing entirely, it is auto-translated from the first available source
-track.
+Auto-translation is **not** attempted on the default path — YouTube's
+timedtext `&tlang=` endpoint is aggressively rate-limited on
+unauthenticated IPs, so it is opt-in only via `--sub-translate <lang>`.
 
 ```bash
-# Default: English + Hungarian, manual preferred, ASR fallback, translate fallback
+# Default: English + Hungarian, manual preferred, ASR fallback, skip otherwise
 videodl download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Limit to a single language (same fallback chain applies)
@@ -241,7 +241,7 @@ videodl download --sub-lang all --no-sub-translate-missing "https://www.youtube.
 videodl download --no-subtitles "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 videodl download --no-subtitle  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"   # alias
 
-# Force-translate to Hungarian only (single output track, overrides --sub-lang)
+# Explicit auto-translate to Hungarian (single output track)
 videodl download --sub-translate hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 

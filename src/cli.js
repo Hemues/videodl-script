@@ -60,27 +60,56 @@ function cleanUrl(rawUrl) {
 /**
  * Default set of subtitle languages to download when the user does not
  * pass `--sub-lang` explicitly. Per-language fallback chain:
- *   1. Manual / official track in that language
- *   2. Auto-generated (ASR) track in that language
- *   3. YouTube auto-translation from the first translatable track
- *   4. Skip (nothing available)
+ *   1. Manual / official track in that language.
+ *   2. Auto-generated (ASR) track in that language.
+ *   3. Skip (nothing downloaded for that language).
  * This matches the user's requirement: "English and Hungarian by default,
- * prefer the official, fall back to auto-generated if missing."
+ * prefer the official, fall back to auto-generated if missing, otherwise
+ * skip." Auto-translation is opt-in only via `--sub-translate <lang>`.
  */
 const DEFAULT_SUB_LANGS = ['en', 'hu'];
 
-/** All YouTube/ISO language codes that should be treated as English/Hungarian. */
+/**
+ * Language-code aliases. A track whose `languageCode` matches any alias
+ * here counts as that language. Matching is case-insensitive.
+ */
 const LANG_ALIASES = {
   en:  ['en', 'en-us', 'en-gb', 'en-ca', 'en-au', 'en-in', 'eng'],
-  hu:  ['hu', 'hu-hu', 'hun', 'magyar'],
+  hu:  ['hu', 'hu-hu', 'hun'],
 };
 
-/** Case-insensitive alias match — returns the native track for `code` if any. */
+/**
+ * Language-name aliases. Used as a secondary match when the YouTube
+ * `languageCode` doesn't line up with a requested short code but the
+ * caption's display name does (e.g. a track tagged `iw` that's really
+ * Hebrew, or a user-uploaded Hungarian track labelled "Magyar").
+ * Matching is substring-based, case-insensitive.
+ */
+const LANG_NAMES = {
+  en:  ['english'],
+  hu:  ['hungarian', 'magyar'],
+};
+
+/**
+ * Case-insensitive alias match — returns the native track for `code`
+ * if any, looking at both the YouTube language code AND the display
+ * name (to catch custom-labelled tracks like "Magyar").
+ */
 function findTrackByLang(subs, code) {
   if (!subs || !code) return null;
-  const aliases = LANG_ALIASES[code.toLowerCase()] || [code.toLowerCase()];
+  const key = String(code).toLowerCase();
+  const codeAliases = LANG_ALIASES[key] || [key];
+  const nameNeedles = LANG_NAMES[key] || [];
+  // Pass 1 — exact language-code alias.
   for (const [lang, sub] of Object.entries(subs)) {
-    if (aliases.includes(String(lang).toLowerCase())) return { matchedLang: lang, sub };
+    if (codeAliases.includes(String(lang).toLowerCase())) return { matchedLang: lang, sub };
+  }
+  // Pass 2 — display-name substring match.
+  if (nameNeedles.length) {
+    for (const [lang, sub] of Object.entries(subs)) {
+      const name = String(sub?.name || '').toLowerCase();
+      if (nameNeedles.some(n => name.includes(n))) return { matchedLang: lang, sub };
+    }
   }
   return null;
 }
@@ -147,13 +176,13 @@ function dedupeSubtitles(subs) {
  *     the source's first translatable track is machine-translated into
  *     <lang> and that single track is embedded.
  *   - `--sub-lang <code[,code,...]>` limits downloads to the given list,
- *     with per-language fallback (manual → auto-generated → auto-translate).
+ *     with per-language fallback: manual / official → auto-generated
+ *     (ASR) → skip. Matching is case-insensitive and alias-aware (e.g.
+ *     a track labelled "Magyar" counts as `hu`).
  *   - `--sub-lang all` downloads every detected native track and, unless
  *     `--no-sub-translate-missing` is passed, fills every translation
  *     language not already covered by a native track.
- *   - No `--sub-lang` (the default): behaves as `--sub-lang en,hu` —
- *     English + Hungarian, preferring the official/manual track, falling
- *     back to auto-generated, and finally auto-translate.
+ *   - No `--sub-lang` (the default): behaves as `--sub-lang en,hu`.
  */
 function resolveSubtitleDownloads(videoInfo, options) {
   if (!subtitlesEnabled(options)) return [];
@@ -212,11 +241,10 @@ function resolveSubtitleDownloads(videoInfo, options) {
   }
 
   // 3. Narrow request (default = en + hu, or user-supplied list).
-  const firstTranslatable = Object.values(deduped).find(s => s?.isTranslatable);
-  const translateBase = firstTranslatable ? subtitleUrl(firstTranslatable, 'vtt') : null;
-
+  //    Per-language fallback: manual / official → auto-generated (ASR) → skip.
+  //    Auto-translation is opt-in only via `--sub-translate <lang>` (branch 1).
   for (const code of requested) {
-    // 3a. Manual / official match (alias-aware).
+    // 3a. Manual / official match (alias-aware, also matches by display name).
     const m = findTrackByLang(manual, code);
     if (m) {
       const u = subtitleUrl(m.sub, 'vtt');
@@ -228,10 +256,7 @@ function resolveSubtitleDownloads(videoInfo, options) {
       const u = subtitleUrl(a.sub, 'vtt');
       if (u) { addPick(u, a.matchedLang, `${a.sub.name || a.matchedLang} (auto-generated)`); continue; }
     }
-    // 3c. Auto-translate fallback.
-    if (translateBase) {
-      addPick(translateBase + '&tlang=' + code, code, `${code} (auto-translated)`);
-    }
+    // 3c. Nothing available — skip silently.
   }
   return picks;
 }
@@ -413,13 +438,13 @@ program
             console.log(chalk.green(`  ⚡ DASH merge available (video+audio downloaded separately = much faster)`));
           }          // Show subtitles if available
           if (videoInfo.subtitles && Object.keys(videoInfo.subtitles).length > 0) {
-            console.log(chalk.cyan('\nAvailable subtitles (default download: en + hu, manual preferred, ASR/auto-translate fallback; use --sub-lang all for every track, --no-subtitles to skip):'));
+            console.log(chalk.cyan('\nAvailable subtitles (default download: en + hu, manual preferred, ASR fallback, otherwise skip; use --sub-lang all for every track, --sub-translate <lang> for explicit translation, --no-subtitles to skip):'));
             for (const [lang, sub] of Object.entries(videoInfo.subtitles)) {
               const auto = sub.isAutoGenerated ? chalk.gray(' (auto-generated)') : '';
               console.log(`  ${lang}: ${sub.name}${sub.name.includes('auto-generated') ? '' : auto}`);
             }
             if (videoInfo.translationLanguages?.length > 0) {
-              console.log(chalk.gray(`  + ${videoInfo.translationLanguages.length} auto-translation languages (used as fallback, or enabled in bulk via --sub-lang all)`));
+              console.log(chalk.gray(`  + ${videoInfo.translationLanguages.length} auto-translation languages (use --sub-translate <lang> for a single translated track, or --sub-lang all to bulk-fetch)`));
             }
           }          return;
         }

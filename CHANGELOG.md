@@ -2,29 +2,39 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.60] - 2026-04-23
+
+### Changed
+- **Strict per-language fallback for the default subtitle path:**
+  official / manual → auto-generated (ASR) → skip. Auto-translation is
+  no longer attempted on the default `--sub-lang` path because YouTube's
+  `&tlang=` timedtext endpoint is aggressively rate-limited on
+  unauthenticated IPs (sustained `HTTP 429`). To request a machine
+  translation explicitly, use `--sub-translate <lang>`.
+- Display-name-based matching: a caption track whose `name` contains
+  "Magyar" (or "Hungarian") now counts as `hu`, and any name containing
+  "English" counts as `en`. This supplements the existing ISO-code and
+  alias matching (`hu`, `hu-HU`, `hun` → `hu`; `en`, `en-US`, `eng`, … → `en`).
+
+### Fixed
+- Subtitle downloads now pace requests (400 ms between files) and use an
+  exponential-backoff retry with up to 6 attempts, honouring `Retry-After`
+  when the server sends one. This avoids sporadic `HTTP 429` errors on
+  videos with many subtitle tracks.
+
+## [2.0.59] - 2026-04-23
+
 ## [2.0.58] - 2026-04-23
 
 ### Changed
 - **Default subtitle languages: English + Hungarian.** The CLI no longer
-  downloads every detected subtitle by default. Instead it downloads
-  `en` and `hu` with the following per-language fallback chain:
-  1. Official / manually authored track.
-  2. Auto-generated (ASR) track.
-  3. YouTube auto-translate from the first translatable track.
-  4. Skip.
+  downloads every detected subtitle by default.
 - `--sub-lang` now accepts a comma-separated list: `--sub-lang en,hu,de`.
-  The same fallback chain applies to every requested language.
 - `--sub-lang all` still downloads every detected track and, unless
   `--no-sub-translate-missing` is passed, fills every translation
   language that is not already present.
-- Language matching is now alias-aware: `en-US`, `en-GB`, `eng` all
-  count as English; `hu-HU`, `hun` count as Hungarian.
-
-### Fixed
-- Auto-translate fallback is now used even when the requested language
-  is missing entirely from both manual and auto-generated lists (the
-  previous build only translated when the requested language was not in
-  the native list but was present in `translationLanguages`).
+- Language matching is alias-aware: `en-US`, `en-GB`, `eng` all count as
+  English; `hu-HU`, `hun` count as Hungarian.
 
 ## [2.0.57] - 2026-04-23
 

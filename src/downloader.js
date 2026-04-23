@@ -370,9 +370,11 @@ export class VideoDownloader extends EventEmitter {
       // Phase 1b: Download subtitles if requested
       if (options.subtitles && options.subtitles.length > 0) {
         this.emit('merge-phase', { phase: 'subtitles', label: `Downloading ${options.subtitles.length} subtitle track(s)...` });
-        for (const sub of options.subtitles) {
+        for (let i = 0; i < options.subtitles.length; i++) {
+          const sub = options.subtitles[i];
           const subPath = finalPath + `.f_sub_${sub.lang}.vtt`;
           try {
+            if (i > 0) await this._subtitlePacingDelay();
             await this._downloadSubtitle(sub.url, subPath);
             const stats = fs.statSync(subPath);
             subTmpPaths.push({ path: subPath, lang: sub.lang, name: sub.name });
@@ -928,7 +930,12 @@ export class VideoDownloader extends EventEmitter {
     } catch {
       headers['Referer'] = 'https://www.youtube.com/';
     }
-    const maxRetries = 3;
+    // YouTube's timedtext endpoint aggressively rate-limits when several
+    // subtitle downloads happen in quick succession (notably the
+    // auto-translate variants, which all hit the same backend). Use a
+    // more generous retry schedule with exponential backoff + jitter
+    // and honour any Retry-After header the server sends.
+    const maxRetries = 6;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const response = await got(url, { headers, timeout: { request: 30000 } });
@@ -938,16 +945,31 @@ export class VideoDownloader extends EventEmitter {
         fs.writeFileSync(outputPath, response.body, 'utf-8');
         return response.body.length;
       } catch (e) {
-        const is429 = e.response?.statusCode === 429;
-        if (is429 && attempt < maxRetries) {
-          const delay = (attempt + 1) * 2000; // 2s, 4s, 6s
-          console.log(`  [Subtitle] Rate limited (429), retrying in ${delay / 1000}s...`);
+        const status = e.response?.statusCode;
+        const is429 = status === 429;
+        const is5xx = status >= 500 && status < 600;
+        if ((is429 || is5xx) && attempt < maxRetries) {
+          const retryAfterHdr = e.response?.headers?.['retry-after'];
+          let delay;
+          if (retryAfterHdr && /^\d+$/.test(String(retryAfterHdr).trim())) {
+            delay = Math.min(parseInt(retryAfterHdr, 10) * 1000, 60000);
+          } else {
+            // Exponential backoff: 2s, 4s, 8s, 16s, 30s, 45s (+ up to 500ms jitter)
+            const schedule = [2000, 4000, 8000, 16000, 30000, 45000];
+            delay = schedule[Math.min(attempt, schedule.length - 1)] + Math.floor(Math.random() * 500);
+          }
+          console.log(`  [Subtitle] ${is429 ? 'Rate limited (429)' : `HTTP ${status}`}, retrying in ${(delay / 1000).toFixed(1)}s (attempt ${attempt + 1}/${maxRetries})...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
         throw e;
       }
     }
+  }
+
+  /** Small pause between subtitle downloads to avoid triggering 429. */
+  _subtitlePacingDelay() {
+    return new Promise(r => setTimeout(r, 400));
   }
 
   /**
@@ -1425,9 +1447,11 @@ export class VideoDownloader extends EventEmitter {
 
     // Download each subtitle track
     console.log(`[HLS] Downloading ${subtitles.length} subtitle track(s)...`);
-    for (const sub of subtitles) {
+    for (let i = 0; i < subtitles.length; i++) {
+      const sub = subtitles[i];
       const subPath = videoPath + `.f_sub_${sub.lang}.vtt`;
       try {
+        if (i > 0) await this._subtitlePacingDelay();
         await this._downloadSubtitle(sub.url, subPath);
         const stats = fs.statSync(subPath);
         subTmpPaths.push({ path: subPath, lang: sub.lang, name: sub.name });

@@ -72,14 +72,18 @@ Subtitle Options (download command):
                                  en,hu   — English + Hungarian (DEFAULT)
                                  en      — English only
                                  hu,de   — Hungarian + German
-                                 all     — every detected track + every
-                                           auto-translate language
-                               For each requested language, the CLI
-                               prefers the official/manual track, falls
-                               back to an auto-generated (ASR) track if
-                               the manual one is missing, and finally to
-                               YouTube's auto-translate API if neither
-                               native track exists.
+                                 all     — every detected track (+ every
+                                           auto-translate language unless
+                                           --no-sub-translate-missing)
+                               For each requested language the CLI first
+                               looks for an official/manual track (match
+                               is case-insensitive and also accepts
+                               custom display-names like "Magyar" for
+                               Hungarian), then falls back to an
+                               auto-generated (ASR) track, then skips.
+                               Auto-translation is NOT attempted on the
+                               default path — use --sub-translate <lang>
+                               to request an explicit translation.
       --sub-translate <lang>   Auto-translate subtitles to this language
                                  (single output track only — overrides
                                  --sub-lang)
