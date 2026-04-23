@@ -79,11 +79,11 @@ Subtitle Options (download command):
                                looks for an official/manual track (match
                                is case-insensitive and also accepts
                                custom display-names like "Magyar" for
-                               Hungarian), then falls back to an
-                               auto-generated (ASR) track, then skips.
-                               Auto-translation is NOT attempted on the
-                               default path — use --sub-translate <lang>
-                               to request an explicit translation.
+                               Hungarian), then an auto-generated (ASR)
+                               track, then YouTube auto-translate from
+                               the first translatable source track, then
+                               skips. Auto-translate works best when a
+                               cookies file is supplied via --cookies.
       --sub-translate <lang>   Auto-translate subtitles to this language
                                  (single output track only — overrides
                                  --sub-lang)

@@ -375,7 +375,7 @@ export class VideoDownloader extends EventEmitter {
           const subPath = finalPath + `.f_sub_${sub.lang}.vtt`;
           try {
             if (i > 0) await this._subtitlePacingDelay();
-            await this._downloadSubtitle(sub.url, subPath);
+            await this._downloadSubtitle(sub.url, subPath, { cookies: options.cookies });
             const stats = fs.statSync(subPath);
             subTmpPaths.push({ path: subPath, lang: sub.lang, name: sub.name });
             console.log(`  Subtitle [${sub.lang}]: ${(stats.size / 1024).toFixed(1)} KB`);
@@ -916,19 +916,36 @@ export class VideoDownloader extends EventEmitter {
 
   /**
    * Download a subtitle file (VTT) from URL to a local path.
-   * Includes retry logic for 429 rate limits.
+   * Forwards cookies + a browser-like User-Agent / Referer / Origin so
+   * that YouTube's `&tlang=` auto-translate endpoint works (it returns
+   * `HTTP 429` for anonymous requests). Includes retry logic for 429 /
+   * 5xx.
+   * @param {string} url
+   * @param {string} outputPath
+   * @param {{cookies?: Array}} [opts]
    */
-  async _downloadSubtitle(url, outputPath) {
+  async _downloadSubtitle(url, outputPath, opts = {}) {
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept-Language': 'en-US,en;q=0.9'
+      'Accept-Language': 'en-US,en;q=0.9,hu;q=0.8'
     };
-    // Set Referer based on subtitle URL origin
+    // Set Referer/Origin based on subtitle URL origin so YouTube accepts
+    // the request as browser-originating.
     try {
       const urlObj = new URL(url);
       headers['Referer'] = urlObj.origin + '/';
+      headers['Origin']  = urlObj.origin;
     } catch {
       headers['Referer'] = 'https://www.youtube.com/';
+      headers['Origin']  = 'https://www.youtube.com';
+    }
+    // Forward cookies if the caller supplied any (required for YouTube
+    // auto-translate `&tlang=` URLs on unauthenticated IPs).
+    if (opts.cookies && Array.isArray(opts.cookies) && opts.cookies.length > 0) {
+      try {
+        const cookieHeader = buildCookieHeader(opts.cookies, url);
+        if (cookieHeader) headers['Cookie'] = cookieHeader;
+      } catch { /* ignore cookie build errors */ }
     }
     // YouTube's timedtext endpoint aggressively rate-limits when several
     // subtitle downloads happen in quick succession (notably the
@@ -1414,7 +1431,7 @@ export class VideoDownloader extends EventEmitter {
           // Post-process: embed subtitles if provided
           if (options.subtitles && options.subtitles.length > 0) {
             try {
-              await this._embedSubtitlesHLS(ffmpegPath, filepath, options.subtitles, directory);
+              await this._embedSubtitlesHLS(ffmpegPath, filepath, options.subtitles, directory, { cookies: options.cookies });
             } catch (subErr) {
               console.log(`[HLS] Warning: subtitle embedding failed: ${subErr.message}`);
             }
@@ -1442,7 +1459,7 @@ export class VideoDownloader extends EventEmitter {
    * Download VTT subtitle files and remux them into an existing video file.
    * Used as a post-processing step after HLS download.
    */
-  async _embedSubtitlesHLS(ffmpegPath, videoPath, subtitles, directory) {
+  async _embedSubtitlesHLS(ffmpegPath, videoPath, subtitles, directory, opts = {}) {
     const subTmpPaths = [];
 
     // Download each subtitle track
@@ -1452,7 +1469,7 @@ export class VideoDownloader extends EventEmitter {
       const subPath = videoPath + `.f_sub_${sub.lang}.vtt`;
       try {
         if (i > 0) await this._subtitlePacingDelay();
-        await this._downloadSubtitle(sub.url, subPath);
+        await this._downloadSubtitle(sub.url, subPath, { cookies: opts.cookies });
         const stats = fs.statSync(subPath);
         subTmpPaths.push({ path: subPath, lang: sub.lang, name: sub.name });
         console.log(`  Subtitle [${sub.lang}]: ${(stats.size / 1024).toFixed(1)} KB`);

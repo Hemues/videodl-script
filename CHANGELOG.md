@@ -2,15 +2,40 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
-## [2.0.60] - 2026-04-23
+## [2.0.63] - 2026-04-23
 
 ### Changed
-- **Strict per-language fallback for the default subtitle path:**
-  official / manual → auto-generated (ASR) → skip. Auto-translation is
-  no longer attempted on the default `--sub-lang` path because YouTube's
-  `&tlang=` timedtext endpoint is aggressively rate-limited on
-  unauthenticated IPs (sustained `HTTP 429`). To request a machine
-  translation explicitly, use `--sub-translate <lang>`.
+- **Default subtitle fallback now includes auto-translate** as step 3 in
+  the chain, matching what YouTube's web UI offers via
+  *Feliratok → Automatikus fordítás*. Per-language order:
+  1. Official / manually authored track.
+  2. Auto-generated (ASR) track.
+  3. YouTube auto-translate (only if the language appears in the video's
+     `translationLanguages` list).
+  4. Skip.
+  So for a video with an English official caption and Hungarian only in
+  the auto-translate list, both `en` and `hu` are now downloaded and
+  embedded by default.
+
+### Fixed
+- **Subtitle downloads now forward cookies + browser-like headers**
+  (User-Agent, Referer, Origin, `Accept-Language: en-US,en;q=0.9,hu;q=0.8`).
+  YouTube's `&tlang=` auto-translate endpoint previously returned
+  `HTTP 429 Too Many Requests` for unauthenticated requests, silently
+  dropping the translated track. With forwarded cookies (from
+  `--cookies`) the translate URL succeeds; even without cookies the
+  added headers plus request pacing sharply reduce 429s.
+- Missing `cookies` parameter plumbed through to `_downloadSubtitle`
+  and `_embedSubtitlesHLS`.
+
+## [2.0.62] - 2026-04-23
+
+### Changed
+- **Strict per-language fallback (then reverted in 2.0.63):**
+  official / manual → auto-generated (ASR) → skip. Auto-translation
+  was temporarily off the default path because YouTube's `&tlang=`
+  endpoint returned `HTTP 429` for anonymous requests; see 2.0.63 for
+  the proper cookie-based fix.
 - Display-name-based matching: a caption track whose `name` contains
   "Magyar" (or "Hungarian") now counts as `hu`, and any name containing
   "English" counts as `en`. This supplements the existing ISO-code and

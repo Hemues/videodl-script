@@ -215,11 +215,16 @@ For each language the CLI follows this fallback chain:
    case-insensitive and also accepts display-name aliases — for
    example a track uploaded under the name "Magyar" counts as `hu`.
 2. Auto-generated (ASR) track in that language if no manual track exists.
-3. Skip (nothing downloaded for that language).
+3. YouTube's auto-translate API (same feature as *Feliratok →
+   Automatikus fordítás* in the web UI) if neither native track
+   exists but the language is in the video's translation list.
+4. Skip (nothing available).
 
-Auto-translation is **not** attempted on the default path — YouTube's
-timedtext `&tlang=` endpoint is aggressively rate-limited on
-unauthenticated IPs, so it is opt-in only via `--sub-translate <lang>`.
+YouTube's `&tlang=` auto-translate endpoint is aggressively rate-limited
+for anonymous requests — if you hit `HTTP 429` on the translate step,
+pass a cookies file via `--cookies cookies.txt` (exported from your
+browser in Netscape/Mozilla format) and the translated track will
+succeed.
 
 ```bash
 # Default: English + Hungarian, manual preferred, ASR fallback, skip otherwise
