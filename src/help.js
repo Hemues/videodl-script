@@ -38,7 +38,7 @@ Download Options:
   -o, --output <filename>      Output filename (overrides auto-generated name)
   -d, --directory <path>       Output directory (default: ./downloads)
   -f, --format <quality>       Quality/format to download
-                                 (none)  — 720p if available, otherwise best (default)
+                                 (none)  — highest quality available (default)
                                  best    — highest quality available
                                  worst   — lowest quality / smallest file
                                  720p    — specific resolution

@@ -162,7 +162,7 @@ Download from: **https://github.com/Hemues/videodl-script/releases**
 ### Download a Video
 
 ```bash
-# Auto-detect site, default quality (720p if available, otherwise best)
+# Auto-detect site, default quality (best available)
 videodl download "https://www.xvideos.com/video12345/example"
 
 # Specify quality
@@ -335,7 +335,7 @@ videodl download-json "https://www.xvideos.com/video12345/example"
 Download Options:
   -o, --output <filename>      Output filename
   -d, --directory <path>       Output directory (default: ./downloads)
-  -f, --format <quality>       Quality: best, worst, 720p, 1080p (default: 720p-or-best)
+  -f, --format <quality>       Quality: best, worst, 720p, 1080p (default: best)
   -H, --header <header>        Custom HTTP header (repeatable)
       --list-formats           List formats without downloading
       --no-base-url            Omit domain from filename

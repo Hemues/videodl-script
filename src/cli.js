@@ -286,7 +286,7 @@ program
   .description('Download a video from URL (supports xHamster and direct URLs)')
   .option('-o, --output <filename>', 'Output filename')
   .option('-d, --directory <path>', 'Output directory', './downloads')
-  .option('-f, --format <quality>', 'Quality/format to download (e.g., 720p, 1080p, best, worst)', 'default')
+  .option('-f, --format <quality>', 'Quality/format to download (e.g., 720p, 1080p, best, worst)', 'best')
   .option('-H, --header <header>', 'Add custom header (can be used multiple times)', collectHeaders, [])
   .option('--no-ssl-verify', 'Disable SSL certificate verification')
   .option('--proxy <url>', 'Use proxy server')

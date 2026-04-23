@@ -2,6 +2,14 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.66] - 2026-04-23
+
+### Changed
+- **Default `-f, --format` is now `best`** (was `default`, which preferred
+  720p and only fell back to best). When no `-f` flag is provided, the
+  CLI now downloads the highest-quality video the site offers. Pass
+  `-f 720p` (or similar) to opt into a specific resolution.
+
 ## [2.0.63] - 2026-04-23
 
 ### Changed
