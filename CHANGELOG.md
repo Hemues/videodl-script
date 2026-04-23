@@ -2,6 +2,31 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.53] - 2026-04-23
+
+### Changed
+- **Subtitles: manual + auto-generated downloaded by default.** The default
+  subtitle behaviour now matches running yt-dlp with both `--write-subs` AND
+  `--write-auto-subs --sub-langs "all"` in a single command. Every detected
+  subtitle track — manual and auto-generated — is fetched and embedded into
+  the output container (`.mkv` / `.mp4`) using the source's native language
+  code (e.g. `eng`, `hun`).
+- **Per-language preference: manual wins over auto-generated.** When a
+  language is available both as a manually authored track and as an
+  auto-generated (ASR) one, only the manual track is downloaded. Languages
+  that exist only as auto-generated tracks (common for Hungarian etc.) are
+  still included.
+- **Override flag: `--no-subtitles`.** Disables all subtitle downloads and
+  embedding. `--no-subtitle` is kept as an alias for backward compatibility.
+- `src/extractors/youtube.js` — `_getCaptionsFromApi` now de-duplicates
+  caption tracks with manual preference instead of silently letting the
+  last track in the YouTube API response overwrite earlier ones.
+- `src/extractors/ytdlp.js` — `_parseSubtitles` now also consumes
+  `automatic_captions` from the yt-dlp JSON output so auto-generated
+  tracks are included for every site that goes through the yt-dlp fallback.
+- `src/cli.js` — five duplicated subtitle-resolution blocks are now
+  delegated to a single `resolveSubtitleDownloads()` helper.
+
 ## [2.0.52] - 2026-04-17
 
 ### Fixed

@@ -207,12 +207,21 @@ videodl download --generate-cookies --no-headless "https://example.com/video"
 
 ### Download with Subtitles
 
+By default, **all** detected subtitles are downloaded and embedded into the
+output container (`.mkv` for multi-track merges, `.mp4` otherwise). Both
+manually authored tracks *and* YouTube's auto-generated (ASR) tracks are
+included — equivalent to running yt-dlp with both `--write-subs` and
+`--write-auto-subs --sub-langs all` in a single invocation. When a language
+is available both as a manual and as an auto-generated track, the manual
+track is preferred.
+
 ```bash
-# Default: subtitles included when available
+# Default: every available subtitle (manual + auto-generated) embedded
 videodl download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-# Skip subtitles
-videodl download --no-subtitle "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+# Skip subtitles (override)
+videodl download --no-subtitles "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+videodl download --no-subtitle  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"   # alias
 
 # Specific language
 videodl download --sub-lang hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -325,7 +334,10 @@ CAPTCHA Options:
       --captcha-key <key>      API key (or set env CAPTCHA_API_KEY)
 
 Subtitle Options:
-      --no-subtitle            Skip subtitles
+      --no-subtitles           Skip subtitles (default: all detected
+                                 manual + auto-generated tracks are
+                                 downloaded and embedded)
+      --no-subtitle            Alias of --no-subtitles
       --sub-lang <lang>        Language code (en, hu, de, or "all")
       --sub-translate <lang>   Auto-translate to language
 

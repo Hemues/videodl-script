@@ -65,14 +65,20 @@ Cookie / Authentication Options:
                                  Format: loginPageUrl::username::password
 
 Subtitle Options (download command):
-      --no-subtitle            Do not download or embed subtitles
-                                 (subtitles are included by default when
-                                 available)
+      --no-subtitle            Do not download or embed subtitles (alias
+                                 of --no-subtitles)
+      --no-subtitles           Do not download or embed subtitles
+                                 (by default EVERY detected subtitle is
+                                 downloaded and merged into the output
+                                 container — both manually authored
+                                 tracks AND YouTube auto-generated ones.
+                                 When both exist for the same language,
+                                 the manual track is preferred.)
       --sub-lang <lang>        Subtitle language code to download
                                  en    — English
                                  hu    — Hungarian
                                  de    — German
-                                 all   — download every available track
+                                 all   — every detected track (default)
       --sub-translate <lang>   Auto-translate subtitles to this language
                                  (uses the source track + YouTube's
                                  translation API)
