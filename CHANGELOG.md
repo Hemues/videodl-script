@@ -2,7 +2,35 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
-## [2.0.53] - 2026-04-23
+## [2.0.58] - 2026-04-23
+
+### Changed
+- **Default subtitle languages: English + Hungarian.** The CLI no longer
+  downloads every detected subtitle by default. Instead it downloads
+  `en` and `hu` with the following per-language fallback chain:
+  1. Official / manually authored track.
+  2. Auto-generated (ASR) track.
+  3. YouTube auto-translate from the first translatable track.
+  4. Skip.
+- `--sub-lang` now accepts a comma-separated list: `--sub-lang en,hu,de`.
+  The same fallback chain applies to every requested language.
+- `--sub-lang all` still downloads every detected track and, unless
+  `--no-sub-translate-missing` is passed, fills every translation
+  language that is not already present.
+- Language matching is now alias-aware: `en-US`, `en-GB`, `eng` all
+  count as English; `hu-HU`, `hun` count as Hungarian.
+
+### Fixed
+- Auto-translate fallback is now used even when the requested language
+  is missing entirely from both manual and auto-generated lists (the
+  previous build only translated when the requested language was not in
+  the native list but was present in `translationLanguages`).
+
+## [2.0.57] - 2026-04-23
+
+(version bump only — no CLI release; v2.0.57 tag belongs to videodl-container)
+
+## [2.0.56] - 2026-04-23
 
 ### Changed
 - **Subtitles: manual + auto-generated downloaded by default.** The default

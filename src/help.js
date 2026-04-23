@@ -68,20 +68,26 @@ Subtitle Options (download command):
       --no-subtitle            Do not download or embed subtitles (alias
                                  of --no-subtitles)
       --no-subtitles           Do not download or embed subtitles
-                                 (by default EVERY detected subtitle is
-                                 downloaded and merged into the output
-                                 container — both manually authored
-                                 tracks AND YouTube auto-generated ones.
-                                 When both exist for the same language,
-                                 the manual track is preferred.)
-      --sub-lang <lang>        Subtitle language code to download
-                                 en    — English
-                                 hu    — Hungarian
-                                 de    — German
-                                 all   — every detected track (default)
+      --sub-lang <langs>       Comma-separated subtitle language codes
+                                 en,hu   — English + Hungarian (DEFAULT)
+                                 en      — English only
+                                 hu,de   — Hungarian + German
+                                 all     — every detected track + every
+                                           auto-translate language
+                               For each requested language, the CLI
+                               prefers the official/manual track, falls
+                               back to an auto-generated (ASR) track if
+                               the manual one is missing, and finally to
+                               YouTube's auto-translate API if neither
+                               native track exists.
       --sub-translate <lang>   Auto-translate subtitles to this language
-                                 (uses the source track + YouTube's
-                                 translation API)
+                                 (single output track only — overrides
+                                 --sub-lang)
+      --no-sub-translate-missing
+                                When --sub-lang all is used, skip the
+                                 auto-translate fill that adds every
+                                 translation language not already
+                                 covered by a native track (default ON)
 
 Conversion Options (convert / dl-convert):
   -vc, --video-codec <codec>   Video codec (libx264, libx265, vp9, ...)

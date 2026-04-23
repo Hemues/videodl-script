@@ -207,26 +207,41 @@ videodl download --generate-cookies --no-headless "https://example.com/video"
 
 ### Download with Subtitles
 
-By default, **all** detected subtitles are downloaded and embedded into the
-output container (`.mkv` for multi-track merges, `.mp4` otherwise). Both
-manually authored tracks *and* YouTube's auto-generated (ASR) tracks are
-included — equivalent to running yt-dlp with both `--write-subs` and
-`--write-auto-subs --sub-langs all` in a single invocation. When a language
-is available both as a manual and as an auto-generated track, the manual
-track is preferred.
+By default, **English + Hungarian** subtitles are downloaded and embedded
+into the output container (`.mkv` for multi-track merges, `.mp4` otherwise).
+For each language the CLI follows this fallback chain:
+
+1. Official / manually authored track in that language.
+2. Auto-generated (ASR) track in that language if no manual track exists.
+3. YouTube's auto-translate API if neither native track exists.
+4. Skip (nothing available).
+
+This means: if a video has an English official caption, that is used;
+if it has Hungarian only as auto-generated, that is used; if Hungarian is
+missing entirely, it is auto-translated from the first available source
+track.
 
 ```bash
-# Default: every available subtitle (manual + auto-generated) embedded
+# Default: English + Hungarian, manual preferred, ASR fallback, translate fallback
 videodl download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-# Skip subtitles (override)
+# Limit to a single language (same fallback chain applies)
+videodl download --sub-lang en "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Multiple specific languages (comma-separated)
+videodl download --sub-lang en,hu,de,fr "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Every native track + every translation language YouTube exposes
+videodl download --sub-lang all "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Every native track ONLY (no auto-translate fill)
+videodl download --sub-lang all --no-sub-translate-missing "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Skip subtitles entirely
 videodl download --no-subtitles "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 videodl download --no-subtitle  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"   # alias
 
-# Specific language
-videodl download --sub-lang hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Auto-translate to Hungarian
+# Force-translate to Hungarian only (single output track, overrides --sub-lang)
 videodl download --sub-translate hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
