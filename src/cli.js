@@ -59,15 +59,12 @@ function cleanUrl(rawUrl) {
 }
 /**
  * Default set of subtitle languages to download when the user does not
- * pass `--sub-lang` explicitly. Per-language fallback chain:
- *   1. Manual / official track in that language.
- *   2. Auto-generated (ASR) track in that language.
- *   3. YouTube auto-translate from the first translatable track
- *      (requires cookies — YouTube returns HTTP 429 on anonymous
- *      requests to the `&tlang=` endpoint).
- *   4. Skip (nothing available).
+ * pass `--sub-lang` explicitly.
+ *
+ * Empty list means subtitles are disabled by default unless the user
+ * explicitly opts in with --sub-lang / --sub-translate.
  */
-const DEFAULT_SUB_LANGS = ['en', 'hu'];
+const DEFAULT_SUB_LANGS = [];
 
 /**
  * Language-code aliases. A track whose `languageCode` matches any alias
@@ -134,7 +131,7 @@ function subtitlesEnabled(options) {
 
 /**
  * Parse the `--sub-lang` argument. Accepts:
- *   - `null` / missing      → the DEFAULT_SUB_LANGS list (en + hu)
+ *   - `null` / missing      → the DEFAULT_SUB_LANGS list (none)
  *   - `"all"`               → sentinel string `"all"`
  *   - `"en"` / `"en,hu,de"` → array of lowercase codes
  */
@@ -182,7 +179,7 @@ function dedupeSubtitles(subs) {
  *   - `--sub-lang all` downloads every detected native track and, unless
  *     `--no-sub-translate-missing` is passed, fills every translation
  *     language not already covered by a native track.
- *   - No `--sub-lang` (the default): behaves as `--sub-lang en,hu`.
+ *   - No `--sub-lang` (the default): subtitles are not downloaded.
  */
 function resolveSubtitleDownloads(videoInfo, options) {
   if (!subtitlesEnabled(options)) return [];
@@ -240,11 +237,12 @@ function resolveSubtitleDownloads(videoInfo, options) {
     return picks;
   }
 
-  // 3. Narrow request (default = en + hu, or user-supplied list).
+  // 3. Narrow request (explicit user-supplied list).
   //    Per-language fallback: manual / official → auto-generated (ASR) →
   //    auto-translate (if the source has a translatable track) → skip.
   const firstTranslatable = Object.values(deduped).find(s => s?.isTranslatable);
-  const translateBase = firstTranslatable ? subtitleUrl(firstTranslatable, 'vtt') : null;
+  const firstAvailableTrack = firstTranslatable || Object.values(deduped)[0] || null;
+  const translateBase = firstAvailableTrack ? subtitleUrl(firstAvailableTrack, 'vtt') : null;
   const translateLangs = Array.isArray(videoInfo?.translationLanguages) ? videoInfo.translationLanguages : [];
 
   /** True if `code` is listed in `translationLanguages` (alias-aware). */
@@ -252,7 +250,9 @@ function resolveSubtitleDownloads(videoInfo, options) {
     if (!translateBase) return false;
     if (!translateLangs.length) return true; // assume yes when list is missing
     const aliases = (LANG_ALIASES[code.toLowerCase()] || [code.toLowerCase()]).map(a => a.toLowerCase());
-    return translateLangs.some(tl => aliases.includes(String(tl.code || tl.languageCode || '').toLowerCase()));
+    const listed = translateLangs.some(tl => aliases.includes(String(tl.code || tl.languageCode || '').toLowerCase()));
+    // Some extractors under-report translationLanguages; keep Hungarian fallback permissive.
+    return listed || code.toLowerCase() === 'hu';
   };
 
   for (const code of requested) {
@@ -299,9 +299,9 @@ program
   .option('--captcha-provider <id>', 'CAPTCHA solver provider: "wit" (free, wit.ai) or "2captcha" (paid); default: wit')
   .option('--captcha-key <key>', 'CAPTCHA API key / token (wit.ai server token or 2captcha key; or set env CAPTCHA_API_KEY)')
   .option('--logins <file>', 'Login-details file for cookie generation (default: logins/logins.txt)')
-  .option('--no-subtitle', 'Do not download/embed subtitles (subtitles are included by default; alias of --no-subtitles)')
-  .option('--no-subtitles', 'Do not download/embed subtitles (subtitles are included by default when available)')
-  .option('--sub-lang <langs>', 'Subtitle language code(s) to download, comma-separated (e.g., en, hu, en,hu,de). Use "all" for every detected track. Default: en,hu')
+  .option('--no-subtitle', 'Do not download/embed subtitles (alias of --no-subtitles)')
+  .option('--no-subtitles', 'Do not download/embed subtitles')
+  .option('--sub-lang <langs>', 'Subtitle language code(s) to download, comma-separated (e.g., en, hu, en,hu,de). Use "all" for every detected track. Default: none')
   .option('--sub-translate <lang>', 'Auto-translate subtitles to this language code (e.g., hu for Hungarian)')
   .option('--no-sub-translate-missing', 'When --sub-lang all is used, do not fill missing languages via YouTube\'s auto-translate API (default: fill)')
   .option('--audio-lang <lang>', 'Audio language: specific code (en, de), "all" for all tracks (default: auto-detect)')
@@ -400,8 +400,68 @@ program
         console.log(chalk.green(`✓ Found: ${videoInfo.title}`));
         console.log(chalk.gray(`  Extractor: ${videoInfo.extractor}`));
 
+        // Playlist / channel URL — recursively download each entry by
+        // re-invoking this same binary (download <entryUrl>) so each video
+        // runs in a clean state.
+        if (videoInfo._type === 'playlist' && Array.isArray(videoInfo.entries) && videoInfo.entries.length > 0) {
+          const sanitizeDir = (t) => { let d = (t || 'playlist').replace(/[^\p{L}\p{N}\s\-_]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'playlist'; if (d.length > 80) d = d.substring(0, 80).replace(/_+$/, ''); return d; };
+          const playlistDir = path.join(options.directory || './downloads', sanitizeDir(videoInfo.title));
+          if (!fs.existsSync(playlistDir)) fs.mkdirSync(playlistDir, { recursive: true });
+          console.log(chalk.cyan(`\n▶ Playlist: ${videoInfo.title} (${videoInfo.entries.length} videos)`));
+          console.log(chalk.gray(`  Directory: ${playlistDir}\n`));
+
+          const { spawn } = await import('child_process');
+          const entries = videoInfo.entries;
+          const limit = (options.playlistItems && /^\d+:\d+$/.test(options.playlistItems))
+            ? (() => { const [s,e] = options.playlistItems.split(':').map(n => parseInt(n,10)); return { start: Math.max(1,s), end: e }; })()
+            : { start: 1, end: entries.length };
+
+          // Rebuild per-entry args from the current argv, swapping directory
+          // and URL.  Skip the --playlist-items flag so nested playlists
+          // don't re-apply the outer range.
+          const rawArgs = process.argv.slice(2).filter(a => a !== 'download');
+          const childArgs = [];
+          for (let i = 0; i < rawArgs.length; i++) {
+            const a = rawArgs[i];
+            if (a === '-d' || a === '--directory') { i++; continue; }
+            if (a.startsWith('-d=') || a.startsWith('--directory=')) continue;
+            if (a === '--playlist-items') { i++; continue; }
+            if (a.startsWith('--playlist-items=')) continue;
+            // Drop the original URL argument (we'll pass each entry URL)
+            if (a === url) continue;
+            childArgs.push(a);
+          }
+          childArgs.push('-d', playlistDir);
+
+          // Detect SEA binary (argv[0] == bundled node) vs `node cli.js`.
+          const isSEA = process.argv[1] && !/\.(m?js|cjs)$/i.test(process.argv[1]);
+          const spawnCmd = isSEA ? process.execPath : process.execPath;
+          const spawnArgsPrefix = isSEA ? [] : [process.argv[1]];
+
+          let ok = 0, failed = 0;
+          for (let idx = 0; idx < entries.length; idx++) {
+            const n = idx + 1;
+            if (n < limit.start || n > limit.end) continue;
+            const e = entries[idx];
+            const entryUrl = e.url || e.webpage_url;
+            if (!entryUrl) { console.log(chalk.yellow(`  [${n}/${entries.length}] Skipped: no URL`)); failed++; continue; }
+            console.log(chalk.cyan(`\n━━━ [${n}/${entries.length}] ${e.title || entryUrl} ━━━`));
+            const exit = await new Promise((resolve) => {
+              const child = spawn(spawnCmd, [...spawnArgsPrefix, 'download', entryUrl, ...childArgs], {
+                stdio: 'inherit',
+              });
+              child.on('exit', (code) => resolve(code ?? 1));
+              child.on('error', () => resolve(1));
+            });
+            if (exit === 0) ok++; else { console.error(chalk.red(`  ✗ Entry exited with code ${exit}`)); failed++; }
+          }
+          console.log(chalk.green(`\n✓ Playlist complete: ${ok} downloaded, ${failed} failed\n`));
+          if (failed > 0 && ok === 0) process.exit(1);
+          return;
+        }
+
         // Check if session is expired and no Premium formats — try cookie refresh
-        const hasPremium = videoInfo.formats.some(f => f.isPremium);
+        const hasPremium = (videoInfo.formats || []).some(f => f.isPremium);
         if (!hasPremium && videoInfo.sessionExpired && cookies) {
           // When SAPISIDHASH auth data exists, the CDN often still honours
           // premium speed despite LOGGED_IN=false — skip cookie refresh and
@@ -457,7 +517,7 @@ program
             console.log(chalk.green(`  ⚡ DASH merge available (video+audio downloaded separately = much faster)`));
           }          // Show subtitles if available
           if (videoInfo.subtitles && Object.keys(videoInfo.subtitles).length > 0) {
-            console.log(chalk.cyan('\nAvailable subtitles (default download: en + hu, manual preferred, ASR then auto-translate fallback; use --sub-lang all for every track, --sub-translate <lang> for explicit translation, --no-subtitles to skip):'));
+            console.log(chalk.cyan('\nAvailable subtitles (default: none; use --sub-lang <code> or --sub-lang all to download, --sub-translate <lang> for explicit translation, --no-subtitles to skip):'));
             for (const [lang, sub] of Object.entries(videoInfo.subtitles)) {
               const auto = sub.isAutoGenerated ? chalk.gray(' (auto-generated)') : '';
               console.log(`  ${lang}: ${sub.name}${sub.name.includes('auto-generated') ? '' : auto}`);
@@ -584,12 +644,15 @@ program
 
       // Sanitize filename: keep letters (including accented), digits and spaces
       const sanitizeFilename = (title) => {
-        return title
+        let name = title
           .replace(/[^\p{L}\p{N}\s]/gu, '') // Remove non-letter/non-digit chars, keep Unicode letters
           .replace(/\s+/g, '_')          // Replace spaces with underscores
           .replace(/_+/g, '_')           // Collapse multiple underscores
           .replace(/^_+|_+$/g, '')       // Trim underscores from start/end
           .trim() || 'video';            // Fallback to 'video' if empty
+        // Truncate to prevent Windows MAX_PATH (260) overflow on Samba shares
+        if (name.length > 150) name = name.substring(0, 150).replace(/_+$/, '');
+        return name;
       };
 
       // Extract base domain from URL (e.g., xvideos.com, pornhub.com)
@@ -673,6 +736,11 @@ program
         downloadOptions.proxy = options.proxy;
       }
 
+      // Add chapters if available (for HLS and other download methods)
+      if (videoInfo.chapters) {
+        downloadOptions.chapters = videoInfo.chapters;
+      }
+
       // Use DASH merge for video-only+audio-only pairs, HLS for m3u8, regular for direct
       if (formatPair && formatPair._hlsVideoUrl) {
         // HLS pair: pass video + audio variant URLs as separate ffmpeg inputs
@@ -696,7 +764,7 @@ program
         await downloader.downloadHLS(downloadOptions);
       } else if (formatPair) {
         // Resolve subtitle downloads for DASH merge
-        // Subtitles are included by default when available; --no-subtitle(s) opts out
+        // Subtitles are disabled by default; opt in with --sub-lang / --sub-translate
         const subtitleDownloads = resolveSubtitleDownloads(videoInfo, options);
         if (subtitleDownloads.length > 0) {
           console.log(chalk.cyan(`\uD83D\uDCDD Subtitles: ${subtitleDownloads.map(s => s.lang).join(', ')}`));
@@ -717,7 +785,8 @@ program
           directory: options.directory,
           cookies: cookies,
           rejectUnauthorized: options.sslVerify,
-          subtitles: subtitleDownloads
+          subtitles: subtitleDownloads,
+          chapters: videoInfo.chapters || null
         });
       } else if (selectedFormat.protocol === 'hls' || selectedFormat.ext === 'm3u8' || selectedFormat.url.includes('.m3u8')) {
         if (selectedFormat._hlsPlaylist) {
@@ -1277,12 +1346,12 @@ program
       }
 
       // Shared helpers
-      const sanitize = (t) => t.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'video';
+      const sanitize = (t) => { let n = t.replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'video'; if (n.length > 150) n = n.substring(0, 150).replace(/_+$/, ''); return n; };
       const extractDomain = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
 
       // ---- Playlist / Channel: create subdirectory and download each entry ----
       if (videoInfo._type === 'playlist' && videoInfo.entries && videoInfo.entries.length > 0) {
-        const sanitizeDir = (t) => t.replace(/[^\p{L}\p{N}\s\-_]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'playlist';
+        const sanitizeDir = (t) => { let d = t.replace(/[^\p{L}\p{N}\s\-_]/gu, '').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').trim() || 'playlist'; if (d.length > 80) d = d.substring(0, 80).replace(/_+$/, ''); return d; };
         const playlistDir = path.join(options.directory, sanitizeDir(videoInfo.title));
 
         if (!fs.existsSync(playlistDir)) {
@@ -1409,6 +1478,7 @@ program
                 rejectUnauthorized: options.sslVerify, cookies,
                 duration: entryInfo.duration || 0,
                 subtitles: subtitleDownloads.length > 0 ? subtitleDownloads : undefined,
+                chapters: entryInfo.chapters || null,
               };
               if (entryFormatPair._hlsAudioUrls) hlsOpts.hlsAudioUrls = entryFormatPair._hlsAudioUrls;
               else hlsOpts.hlsAudioUrl = entryFormatPair._hlsAudioUrl;
@@ -1424,6 +1494,7 @@ program
                 videoInfo: `${entryFormatPair.video.quality} ${entryFormatPair.video.vcodec || ''}`.trim(),
                 audioInfo: audioStreams.map(a => `${a.lang || 'audio'}`).join('+'),
                 filename: entryFilename, directory: playlistDir, cookies, rejectUnauthorized: options.sslVerify, subtitles: subtitleDownloads,
+                chapters: entryInfo.chapters || null,
               });
             } else if (entrySelectedFormat.protocol === 'hls' || entrySelectedFormat.ext === 'm3u8' || (entrySelectedFormat.url && entrySelectedFormat.url.includes('.m3u8'))) {
               const dlOpts = {
@@ -1637,6 +1708,7 @@ program
           rejectUnauthorized: options.sslVerify, cookies,
           duration: videoInfo.duration || 0,
           subtitles: subtitleDownloads.length > 0 ? subtitleDownloads : undefined,
+          chapters: videoInfo.chapters || null,
         };
         if (formatPair._hlsAudioUrls) {
           hlsOpts.hlsAudioUrls = formatPair._hlsAudioUrls;
@@ -1655,6 +1727,7 @@ program
           videoInfo: `${formatPair.video.quality} ${formatPair.video.vcodec || ''}`.trim(),
           audioInfo: audioStreams.map(a => `${a.lang || 'audio'}`).join('+'),
           filename, directory: options.directory, cookies, rejectUnauthorized: options.sslVerify, subtitles: subtitleDownloads,
+          chapters: videoInfo.chapters || null,
         });
       } else if (selectedFormat.protocol === 'hls' || selectedFormat.ext === 'm3u8' || (selectedFormat.url && selectedFormat.url.includes('.m3u8'))) {
         const dlOpts = {

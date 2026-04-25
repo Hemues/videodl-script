@@ -251,14 +251,12 @@ export class BaseExtractor {
     if (audioTracks.length > 1) {
       return { video: selectedVideo, audio: selectedAudio, audioTracks, ext: 'mkv' };
     }
-    // Pick container: webm for VP9/AV1+Opus, mp4 for H.264/AV1+AAC, mkv fallback
-    const isWebmVideo = vcodec.startsWith('vp9') || vcodec.startsWith('vp09') || vcodec.startsWith('av01');
-    const isWebmAudio = acodec.startsWith('opus') || acodec.startsWith('vorbis');
+    // Pick container: mp4 for H.264/AV1+AAC, mkv for everything else
+    // (mkv is more compatible with desktop players than .webm for VP9/AV1+Opus+subs+chapters)
     const isMp4Video = vcodec.startsWith('avc1') || vcodec.startsWith('av01');
     const isMp4Audio = acodec.startsWith('mp4a');
-    let ext = 'mkv'; // universal fallback
-    if (isWebmVideo && isWebmAudio) ext = 'webm';
-    else if (isMp4Video && isMp4Audio) ext = 'mp4';
+    let ext = 'mkv'; // universal fallback — also used for VP9/AV1+Opus (more compatible than .webm)
+    if (isMp4Video && isMp4Audio) ext = 'mp4';
 
     return { video: selectedVideo, audio: selectedAudio, audioTracks, ext };
   }
