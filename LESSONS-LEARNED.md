@@ -20,6 +20,8 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 9. [AShemaleTube embed format change](#9--ashemaletube-embed-format-change)
 10. [Release artifacts belong in GitHub Releases, not git](#10--release-artifacts-belong-in-github-releases-not-git)
 11. [SEA binaries must be built with official Node.js binary](#11--sea-binaries-must-be-built-with-official-nodejs-binary)
+12. [Chapter Embedding via ffmetadata](#12--chapter-embedding-via-ffmetadata)
+13. [ffmpeg -map 0 Required When Remuxing Multi-Stream Files](#13--ffmpeg--map-0-required-when-remuxing-multi-stream-files)
 
 ---
 
@@ -271,3 +273,70 @@ The version stamp is baked in at build time from `package.json`. If you bump the
 AFTER building, the binary will report the old version — rebuild after the bump.
 
 **Last update:** 2026-04-17
+
+---
+
+## #12 — Chapter Embedding via ffmetadata
+
+**Status:** ✅ Verified (v2.0.87)
+
+**Problem:** YouTube videos with chapter markers (timestamps in the description) lost
+those chapters when downloaded — the output file had no chapter metadata, so media
+players couldn't show a chapter list or allow jumping between sections.
+
+**Solution:** Chapters are extracted from two sources:
+
+1. **Native YouTube extractor** (`youtube.js`): Parses timestamps from the video
+   description using regex (`/^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s+(.+?)\s*$/`).
+   YouTube requires ≥3 timestamps with the first at `0:00`. Also tries parsing
+   `engagementPanels` from `ytInitialData` for structured chapter data.
+2. **yt-dlp fallback extractor** (`ytdlp.js`): Passes through the `chapters` array
+   from yt-dlp's `--dump-json` output (format: `[{start_time, end_time, title}, ...]`).
+
+Chapters are written to an **ffmetadata file** (`[CHAPTER]` sections with
+`TIMEBASE=1/1000`, `START`, `END`, `title`) and passed to ffmpeg as an additional
+`-i` input with `-map_chapters N`. This works for both DASH merges
+(`_ffmpegMerge()`) and HLS downloads (`downloadHLS()`).
+
+**Key detail:** The chapters metadata file must be a separate ffmpeg input — it
+cannot be passed inline. The `-map_chapters` index refers to the input number
+of the ffmetadata file (after video, audio, and subtitle inputs).
+
+**Cleanup:** The temporary `.f_chapters.txt` file is deleted after merge in the
+`finally` block (DASH) or `cleanupVariantTemp()` callback (HLS).
+
+**Last update:** 2026-04-25
+
+---
+
+## #13 — ffmpeg -map 0 Required When Remuxing Multi-Stream Files
+
+**Status:** ✅ Verified (v2.0.86 container)
+
+**Problem:** After downloading a video with multiple subtitle tracks (e.g., EN + HU),
+the subtitle disposition post-processing step (`ffmpeg -i file -c copy -disposition:s 0`)
+silently dropped all but the first subtitle track. Only English survived; Hungarian
+was lost.
+
+**Root Cause:** ffmpeg's **default stream selection** keeps only ONE stream per type
+(1 video, 1 audio, 1 subtitle) unless explicitly told otherwise. Running
+`ffmpeg -i input -c copy -disposition:s 0 -y output` selects the "best" subtitle
+track and discards the rest.
+
+**Fix:** Add `-map 0` to copy ALL streams from input 0:
+```bash
+ffmpeg -i input.mkv -map 0 -c copy -disposition:s 0 -y output.mkv
+```
+
+**Proof:**
+```
+# With -map 0 (FIXED):   index=2 lang=en, index=3 lang=hu, both default=0
+# Without -map 0 (BUG):  index=2 lang=en only, hu MISSING
+```
+
+**Lesson:** Any ffmpeg remux/post-process that touches a file with multiple streams
+of the same type MUST use `-map 0` (or explicit `-map 0:v -map 0:a -map 0:s`) to
+preserve them all. This applies to disposition changes, metadata edits, and any
+`-c copy` pass-through operation.
+
+**Last update:** 2026-04-25

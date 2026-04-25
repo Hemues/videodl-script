@@ -5,7 +5,7 @@ videodl-cli/
 ├── src/
 │   ├── cli.js                     # CLI entry point (commander.js, 14 commands)
 │   ├── index.js                   # Programmatic API exports
-│   ├── downloader.js              # HTTP/HLS/DASH download engine
+│   ├── downloader.js              # HTTP/HLS/DASH download engine + chapter embedding
 │   ├── converter.js               # ffmpeg conversion wrapper
 │   ├── cookies.js                 # Netscape cookie parser + header builder
 │   ├── cookie-generator.js        # Browser-based login automation (Puppeteer)
@@ -17,7 +17,7 @@ videodl-cli/
 │   ├── extractors/                # Site-specific video extractors
 │   │   ├── index.js               # Extractor registry (21 sites + direct)
 │   │   ├── base.js                # BaseExtractor — canHandle, extract, selectFormat
-│   │   ├── youtube.js             # YouTube (metadata + limited download)
+│   │   ├── youtube.js             # YouTube (metadata + limited download + chapters)
 │   │   ├── xhamster.js            # xHamster
 │   │   ├── pornhub.js             # PornHub
 │   │   ├── xvideos.js             # XVideos

@@ -11,6 +11,7 @@ A powerful CLI video downloader and converter with **35 built-in site extractors
 - **DASH merging** — automatically merges separate video + audio streams via ffmpeg
 - **HLS streaming** — downloads M3U8 / HLS streams with ffmpeg
 - **Subtitle support** — downloads, embeds, and auto-translates subtitles (YouTube)
+- **Chapter embedding** — YouTube chapter markers from the video description are automatically embedded as metadata (works in VLC, mpv, MPC-HC, etc.)
 - **Cookie authentication** — Netscape cookie files (same format as yt-dlp / curl)
 - **Auto cookie generation** — browser-based login automation via Puppeteer
 - **Cloudflare bypass** — TLS fingerprint impersonation for CF-protected CDNs

@@ -2,6 +2,47 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.87] - 2026-04-25
+
+### Added
+- **Chapter embedding** — YouTube chapter markers (timestamps in the video
+  description) are now automatically extracted and embedded into the output
+  file as proper chapter metadata. Works with both the native YouTube
+  extractor (parses timestamps from description + `engagementPanels` page
+  data) and the yt-dlp fallback extractor (passes through yt-dlp's
+  `chapters` JSON field). Chapters are written as an ffmetadata file and
+  merged via ffmpeg's `-map_chapters` flag during both DASH and HLS merges.
+  Videos without chapter timestamps are unaffected.
+
+### Changed
+- **Subtitle disposition defaults to non-display** — when the backend
+  requests subtitles with `subtitle_language=none`, EN+HU subtitles are
+  still downloaded and embedded but their ffmpeg disposition flag is set to
+  `default=0` so they don't auto-play in media players. Users can still
+  manually enable them.
+
+### Fixed
+- **All subtitle tracks preserved during disposition fix** — the ffmpeg
+  post-processing step that sets `disposition:s 0` now uses `-map 0` to
+  copy all streams, fixing a bug where only the first subtitle track
+  survived (e.g., Hungarian was silently dropped, leaving only English).
+
+## [2.0.68] - 2026-04-23
+
+### Fixed
+- **Playlist URLs no longer crash with `Cannot read properties of undefined (reading 'some')`.**
+  When the user passes a YouTube playlist / channel URL (e.g.
+  `youtube.com/watch?v=...&list=...`) to the default `download`
+  command, the CLI now detects `_type === 'playlist'` and
+  iterates each entry, re-invoking itself for every video. A
+  sanitized playlist title is used as the output subdirectory.
+  Previously the command assumed `videoInfo.formats` was always
+  defined and crashed on playlist objects.
+- Guarded the Premium-format detection path with
+  `(videoInfo.formats || []).some(...)` so future extractors that
+  return entry-style results without a `formats` array no longer
+  throw.
+
 ## [2.0.66] - 2026-04-23
 
 ### Changed
