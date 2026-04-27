@@ -10,6 +10,7 @@ import { VideoConverter } from './converter.js';
 import { extractVideoInfo, listSupportedSites, listExtractors, getExtractor } from './extractors/index.js';
 import { parseCookieFile, buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 import { cfProtectedDownload } from './cf-solver.js';
+import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { getFullHelp, getSupportedSitesHelp } from './help.js';
 import { generateCookies, checkCookieExpiry, DEFAULT_COOKIE_FILE, DEFAULT_LOGIN_FILE } from './cookie-generator.js';
 
@@ -714,6 +715,18 @@ program
           console.log(chalk.green(`\n✓ Download complete!`));
           console.log(chalk.gray(`File: ${result.filepath}`));
           console.log(chalk.gray(`Size: ${sizeMB} MB`));
+
+          // Embed subtitles into the downloaded file (if available)
+          const subtitleDownloads = resolveSubtitleDownloads(videoInfo, options);
+          if (subtitleDownloads.length > 0) {
+            console.log(chalk.cyan(`\n📝 Subtitles: ${subtitleDownloads.map(s => s.lang).join(', ')}`));
+            try {
+              const ffmpegBin = await ensureFFmpeg();
+              await downloader._embedSubtitlesHLS(ffmpegBin, result.filepath, subtitleDownloads, path.dirname(result.filepath), { cookies });
+            } catch (subErr) {
+              console.log(chalk.yellow(`⚠ Subtitle embedding failed: ${subErr.message}`));
+            }
+          }
         } catch (cfErr) {
           console.error(chalk.red(`Error: ${cfErr.message}`));
           process.exit(1);
@@ -804,7 +817,25 @@ program
 
         await downloader.downloadHLS(downloadOptions);
       } else {
-        await downloader.download(downloadOptions);
+        // Resolve subtitles for direct single-file downloads
+        const subtitleDownloads = resolveSubtitleDownloads(videoInfo, options);
+        if (subtitleDownloads.length > 0) {
+          console.log(chalk.cyan(`\uD83D\uDCDD Subtitles: ${subtitleDownloads.map(s => s.lang).join(', ')}`));
+        } else if (subtitlesEnabled(options) && (options.subLang || options.subTranslate)) {
+          console.log(chalk.yellow('\u26A0 No subtitles available for this video (or requested language missing)'));
+        }
+
+        const directFilepath = await downloader.download(downloadOptions);
+
+        // Embed subtitles post-download for direct single-file downloads
+        if (subtitleDownloads.length > 0 && directFilepath) {
+          try {
+            const ffmpegBin = await ensureFFmpeg();
+            await downloader._embedSubtitlesHLS(ffmpegBin, directFilepath, subtitleDownloads, path.dirname(directFilepath), { cookies });
+          } catch (subErr) {
+            console.log(chalk.yellow(`\u26A0 Subtitle embedding failed: ${subErr.message}`));
+          }
+        }
       }
     } catch (error) {
       console.error(chalk.red(`Error: ${error.message}`));
@@ -1688,6 +1719,18 @@ program
             }
           });
           jsonLine({ status: 'finished', filename: result.filepath, size: result.size });
+
+          // Embed subtitles into the downloaded file (if available)
+          const cfSubDownloads = resolveSubtitleDownloads(videoInfo, options);
+          if (cfSubDownloads.length > 0) {
+            jsonLine({ status: 'postprocessing', msg: `Embedding ${cfSubDownloads.length} subtitle(s)...`, phase: 'subtitles' });
+            try {
+              const ffmpegBin = await ensureFFmpeg();
+              await downloader._embedSubtitlesHLS(ffmpegBin, result.filepath, cfSubDownloads, path.dirname(result.filepath), { cookies });
+            } catch (subErr) {
+              jsonLine({ status: 'warning', msg: `Subtitle embedding failed: ${subErr.message}` });
+            }
+          }
         } catch (cfErr) {
           jsonLine({ status: 'error', msg: cfErr.message });
           process.exit(1);

@@ -2,7 +2,19 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
-## [2.0.91] - 2026-06-24
+## [2.0.93] - 2026-04-28
+
+### Added
+- **Subtitle support for UncensoredHentai** — the extractor now parses
+  JW Player caption tracks from the nhplayer.com player response and
+  returns them as subtitle entries. English SRT subtitles (hosted on
+  cdn.htstreaming.com) are automatically detected and included.
+- **Subtitle embedding for CF-protected and direct downloads** — subtitle
+  tracks are now downloaded and embedded via ffmpeg after Cloudflare TLS-
+  impersonation downloads and regular single-file direct downloads. Previously
+  subtitles were only embedded during DASH merge and HLS post-processing.
+
+## [2.0.91] - 2026-04-27
 
 ### Fixed
 - **UncensoredHentai extractor** — fixed three bugs that broke extraction
