@@ -220,7 +220,23 @@ export class YtdlpExtractor extends BaseExtractor {
       description: data.description || null,
       filesize: data.filesize || data.filesize_approx || null,
       filesize_approx: data.filesize_approx || null,
+      chapters: this._parseChapters(data.chapters) || null,
     };
+  }
+
+  /**
+   * Convert yt-dlp chapters array to videodl-cli format.
+   * yt-dlp chapters are [{start_time, end_time, title}, ...]
+   */
+  _parseChapters(chapters) {
+    if (!Array.isArray(chapters) || chapters.length === 0) return null;
+    return chapters
+      .filter(ch => ch && typeof ch.start_time === 'number' && typeof ch.end_time === 'number')
+      .map(ch => ({
+        start_time: ch.start_time,
+        end_time: ch.end_time,
+        title: ch.title || '',
+      }));
   }
 
   /**

@@ -1167,9 +1167,19 @@ export class YouTubeExtractor extends BaseExtractor {
 
     // Check LOGGED_IN status from page — warns when cookies are stale or incomplete
     const loggedInMatch = html.match(/"LOGGED_IN"\s*:\s*(true|false)/);
-    this._isLoggedIn = loggedInMatch ? loggedInMatch[1] === 'true' : false;
+    const pageLoggedIn = loggedInMatch ? loggedInMatch[1] === 'true' : false;
+    // Fix A: Trust cookie-based auth when SAPISID is derivable and __Secure-3PSID is present.
+    // The page HTML LOGGED_IN flag is missing/unreliable on consent walls, bot-check pages,
+    // and some geo-redirected responses — but if we have SAPISID + __Secure-3PSID cookies
+    // we CAN generate a valid SAPISIDHASH, so API auth will work.
+    const hasSapisid = !!sapisidTest;
+    const has3PSID = !!this._cookies.find(c => c.name === '__Secure-3PSID');
+    const cookieAuthPossible = hasSapisid && has3PSID;
+    this._isLoggedIn = pageLoggedIn || cookieAuthPossible;
     this._sessionExpired = false;
-    if (!this._isLoggedIn && this._cookieHeader) {
+    if (!pageLoggedIn && cookieAuthPossible) {
+      console.log(`[${this.name}] ✓ Page says LOGGED_IN=false but auth cookies present — trusting SAPISIDHASH auth`);
+    } else if (!this._isLoggedIn && this._cookieHeader) {
       this._sessionExpired = true;
       // Check which critical cookies are missing
       const criticalNames = ['HSID', 'SSID', '__Secure-1PSID', '__Secure-3PSID', 'LOGIN_INFO'];
@@ -1399,22 +1409,47 @@ export class YouTubeExtractor extends BaseExtractor {
         console.log(`[${this.name}] ${cName}: URL probe OK`);
       }
 
+      // Fix B: Some clients (notably TV/TVHTML5) return mostly SABR formats
+      // where only a single low-res muxed format has a direct URL — the other
+      // 30+ adaptive 1080p/4K entries use serverAbrStreamingUrl which we can't
+      // decode.  If we only got combined-muxed formats (no video-only adaptive),
+      // keep trying other clients that may return proper DASH adaptive streams.
+      const hasAdaptive = candidateFormats.some(f => f.hasVideo && !f.hasAudio);
+      const bestMuxedHeight = Math.max(0, ...candidateFormats.map(f => f.height || 0));
+      if (!hasAdaptive) {
+        console.log(`[${this.name}] ${cName}: only muxed formats (best ${bestMuxedHeight}p, no adaptive) — stashing as fallback, trying next client for DASH`);
+        // Keep the best muxed result as fallback in case no client yields adaptive
+        if (!formats || (bestMuxedHeight > Math.max(0, ...(formats.map(f => f.height || 0))))) {
+          formats = candidateFormats;
+          clientName = cName;
+          clientConfig = cConfig;
+        }
+        continue;
+      }
+
+      // Fix C: IOS DASH/adaptive format URLs contain &c=IOS and the CDN
+      // enforces that only tiny Range requests (probe-size) succeed — larger
+      // bounded-Range or full-file downloads get 403.  Instead of breaking
+      // here, continue the loop to give WEB/MWEB a chance to return proper
+      // DASH adaptive streams (which often include AV1/av01 at high quality).
+      // If no later client succeeds, the HLS fallback (step 10) picks it up.
+      if (cName === 'IOS' && hlsManifestUrl) {
+        console.log(`[${this.name}] IOS: DASH has CDN restrictions — trying remaining clients (WEB/MWEB) for DASH/AV1 before HLS...`);
+        // Clear any Fix B muxed stash so the HLS fallback can win over it
+        formats = null;
+        clientName = null;
+        clientConfig = null;
+        continue;
+      }
+
       formats = candidateFormats;
       break;
     }
 
-    // IOS client DASH/adaptive format URLs contain &c=IOS and the CDN
-    // enforces that only tiny Range requests (probe-size) succeed — larger
-    // bounded-Range or full-file downloads get 403.  The real iOS app uses
-    // HLS, not DASH.  So when IOS is the winning client and an HLS manifest
-    // is available, discard the DASH formats and jump straight to HLS
-    // (skip PAGE fallback which would only yield a low-quality combined format).
+    // IOS client handling is now done inside the loop (Fix C above).
+    // If no later client produced DASH formats, formats remains null and the
+    // HLS fallback at step 10 will use hlsManifestUrl from IOS.
     let forceHLS = false;
-    if (formats && formats.length > 0 && clientName === 'IOS' && hlsManifestUrl) {
-      console.log(`[${this.name}] IOS DASH formats have CDN restrictions — switching to HLS manifest`);
-      formats = null;
-      forceHLS = true;
-    }
 
     // 9. Fallback: try formats from the page-embedded ytInitialPlayerResponse.
     //    The page was fetched WITH cookies, so the embedded response reflects
@@ -1663,12 +1698,21 @@ export class YouTubeExtractor extends BaseExtractor {
     }
 
     // Sort: combined video+audio first, then by height, then bitrate
+    // Sort: combined video+audio first, then by height, then codec (AV1 > VP9 > H.264), then bitrate
+    const _codecRank = (f) => {
+      const vc = (f.vcodec || '').toLowerCase();
+      if (vc.startsWith('av01')) return 0; // AV1 — best compression
+      if (vc.startsWith('vp0')) return 1;  // VP9
+      return 2;                            // H.264 / other
+    };
     formats.sort((a, b) => {
       const ac = a.hasVideo && a.hasAudio;
       const bc = b.hasVideo && b.hasAudio;
       if (ac && !bc) return -1;
       if (!ac && bc) return 1;
       if (a.height !== b.height) return (b.height || 0) - (a.height || 0);
+      const cr = _codecRank(a) - _codecRank(b);
+      if (cr !== 0) return cr;
       return (b.bitrate || 0) - (a.bitrate || 0);
     });
 
@@ -1699,20 +1743,155 @@ export class YouTubeExtractor extends BaseExtractor {
 
     const videoDetails2 = pagePlayerResponse?.videoDetails || {};
 
+    // 10. Extract chapters from description or page data
+    const videoDuration = videoDetails2.lengthSeconds ? parseInt(videoDetails2.lengthSeconds) : null;
+    let chapters = this._extractChapters(videoDetails2.shortDescription || '', videoDuration);
+    if (!chapters || chapters.length === 0) {
+      // Try from engagementPanels / macroMarkers in page data
+      chapters = this._extractChaptersFromPageData(html, videoDuration);
+    }
+    if (chapters && chapters.length > 0) {
+      console.log(`[${this.name}] Chapters: ${chapters.length} markers found`);
+    }
+
     return {
       title,
       formats,
       extractor: this.name,
       url,
       videoId,
-      duration: videoDetails2.lengthSeconds ? parseInt(videoDetails2.lengthSeconds) : null,
+      duration: videoDuration,
       description: videoDetails2.shortDescription || null,
       uploader: videoDetails2.author || null,
       thumbnail: videoDetails2.thumbnail?.thumbnails?.at(-1)?.url || null,
       subtitles: subtitles || null,
       translationLanguages: translationLanguages || null,
+      chapters: chapters && chapters.length > 0 ? chapters : null,
       sessionExpired: this._sessionExpired || false,
       hasSapisidAuth: !!this._generateSapisidHash()
     };
+  }
+
+  /**
+   * Parse chapters from YouTube video description.
+   * YouTube requires: first timestamp at 0:00, at least 3 timestamps.
+   * Format: "H:MM:SS title" or "MM:SS title" or "M:SS title"
+   */
+  _extractChapters(description, duration) {
+    if (!description) return null;
+
+    const lines = description.split('\n');
+    const timestamps = [];
+
+    for (const line of lines) {
+      // Match patterns like "0:00 Intro", "01:30 Topic", "1:05:30 Section"
+      const match = line.match(/^\s*(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\s+(.+?)\s*$/);
+      if (match) {
+        const hours = match[1] ? parseInt(match[1]) : 0;
+        const minutes = parseInt(match[2]);
+        const seconds = parseInt(match[3]);
+        const title = match[4].trim();
+        const startTime = hours * 3600 + minutes * 60 + seconds;
+        timestamps.push({ start_time: startTime, title });
+      }
+    }
+
+    // YouTube requires at least 3 chapters and the first must start at 0:00
+    if (timestamps.length < 3 || timestamps[0].start_time !== 0) return null;
+
+    // Verify timestamps are in ascending order
+    for (let i = 1; i < timestamps.length; i++) {
+      if (timestamps[i].start_time <= timestamps[i - 1].start_time) return null;
+    }
+
+    // Build chapter array with end_time
+    const chapters = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const endTime = (i + 1 < timestamps.length)
+        ? timestamps[i + 1].start_time
+        : (duration || timestamps[i].start_time + 1);
+      chapters.push({
+        start_time: timestamps[i].start_time,
+        end_time: endTime,
+        title: timestamps[i].title,
+      });
+    }
+    return chapters;
+  }
+
+  /**
+   * Try to extract chapters from YouTube's page data (engagementPanels / macroMarkers).
+   */
+  _extractChaptersFromPageData(html, duration) {
+    try {
+      // Look for ytInitialData which contains engagement panels with chapters
+      const dataMatch = html.match(/var\s+ytInitialData\s*=\s*(\{.+?\})\s*;\s*<\/script/s) ||
+                        html.match(/ytInitialData\s*=\s*(\{.+?\})\s*;\s*<\/script/s);
+      if (!dataMatch) return null;
+
+      const data = JSON.parse(dataMatch[1]);
+
+      // Navigate to macroMarkers in engagementPanels
+      const panels = data?.engagementPanels || [];
+      for (const panel of panels) {
+        const content = panel?.engagementPanelSectionListRenderer?.content;
+        const macroMarkers = content?.macroMarkersListItemRenderer;
+        if (macroMarkers) {
+          // Found chapter markers
+          return this._parseMacroMarkers(macroMarkers, duration);
+        }
+
+        // Also check structured description chapters
+        const chapters = content?.structuredDescriptionContentRenderer?.items;
+        if (chapters) {
+          for (const item of chapters) {
+            const renderer = item?.horizontalCardListRenderer;
+            if (!renderer) continue;
+            const cards = renderer.cards || [];
+            const result = [];
+            for (const card of cards) {
+              const ch = card?.macroMarkersListItemRenderer;
+              if (!ch) continue;
+              const title = ch.title?.simpleText || ch.title?.runs?.map(r => r.text).join('') || '';
+              const startSecs = parseInt(ch.onTap?.watchEndpoint?.startTimeSeconds || '0');
+              result.push({ start_time: startSecs, title });
+            }
+            if (result.length >= 3) {
+              // Add end_time
+              const chapters = [];
+              for (let i = 0; i < result.length; i++) {
+                const endTime = (i + 1 < result.length)
+                  ? result[i + 1].start_time
+                  : (duration || result[i].start_time + 1);
+                chapters.push({ start_time: result[i].start_time, end_time: endTime, title: result[i].title });
+              }
+              return chapters;
+            }
+          }
+        }
+      }
+    } catch {
+      // Parsing failed — not critical
+    }
+    return null;
+  }
+
+  _parseMacroMarkers(markers, duration) {
+    if (!markers || !Array.isArray(markers)) return null;
+    const result = [];
+    for (const m of markers) {
+      const title = m.title?.simpleText || m.title?.runs?.map(r => r.text).join('') || '';
+      const startSecs = parseInt(m.onTap?.watchEndpoint?.startTimeSeconds || '0');
+      result.push({ start_time: startSecs, title });
+    }
+    if (result.length < 3) return null;
+    const chapters = [];
+    for (let i = 0; i < result.length; i++) {
+      const endTime = (i + 1 < result.length)
+        ? result[i + 1].start_time
+        : (duration || result[i].start_time + 1);
+      chapters.push({ start_time: result[i].start_time, end_time: endTime, title: result[i].title });
+    }
+    return chapters;
   }
 }

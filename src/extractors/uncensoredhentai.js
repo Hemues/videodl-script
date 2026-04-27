@@ -18,6 +18,7 @@
 import { BaseExtractor } from './base.js';
 import got from 'got';
 import crypto from 'node:crypto';
+import { CookieJar } from 'tough-cookie';
 import { buildCookieHeader } from '../cookies.js';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -119,10 +120,14 @@ export class UncensoredHentaiExtractor extends BaseExtractor {
     console.log(`[${this.name}] Embed: ${embedUrl}`);
 
     // ── Step 2: Fetch nhplayer embed page ──────────────────────────────
+    // The embed/player pages use a PHPSESSID cookie — maintain a cookie jar
+    const jar = new CookieJar();
+
     console.log(`[${this.name}] Fetching embed page...`);
     const embedResp = await got(embedUrl, {
       headers: { ...HEADERS, Referer: url },
-      timeout: { request: 15000 }
+      timeout: { request: 15000 },
+      cookieJar: jar,
     });
 
     const dataIdMatch = embedResp.body.match(/data-id="([^"]+)"/);
@@ -130,59 +135,93 @@ export class UncensoredHentaiExtractor extends BaseExtractor {
     const playerPath = dataIdMatch[1];
 
     // ── Step 3: Fetch player.php ───────────────────────────────────────
-    const playerUrl = 'https://nhplayer.com' + playerPath;
+    const playerUrl = 'https://nhplayer.com' + (playerPath.startsWith('/') ? '' : '/') + playerPath;
     console.log(`[${this.name}] Fetching player page...`);
     const playerResp = await got(playerUrl, {
       headers: { ...HEADERS, Referer: embedUrl },
-      timeout: { request: 15000 }
+      timeout: { request: 15000 },
+      cookieJar: jar,
     });
     const pH = playerResp.body;
 
-    // Extract _cfg values
-    const vid = pH.match(/vid:\s*"([^"]+)"/)?.[1];
-    const ct = pH.match(/ct:\s*"([^"]+)"/)?.[1];
-    const pid = pH.match(/pid:\s*"([^"]+)"/)?.[1];
-    const st = pH.match(/st:\s*"([^"]+)"/)?.[1];
+    // Extract player config — handles both _cfg{...} and window._pV={...} formats
+    const vid = pH.match(/vid:\s*"([^"]+)"/)?.[1] || pH.match(/vid\s*=\s*"([^"]+)"/)?.[1];
+    const ct = pH.match(/ct:\s*"([^"]+)"/)?.[1] || pH.match(/ct\s*=\s*"([^"]+)"/)?.[1];
+    const pid = pH.match(/pid:\s*"([^"]+)"/)?.[1] || pH.match(/pid\s*=\s*"([^"]+)"/)?.[1];
+    const st = pH.match(/st:\s*"([^"]+)"/)?.[1] || pH.match(/st\s*=\s*"([^"]+)"/)?.[1];
     const mimeType = (pH.match(/type:\s*"([^"]+)"/)?.[1] || 'video/mp4').replace(/\\\//g, '/');
-    const poster = (pH.match(/poster:\s*"([^"]+)"/)?.[1] || '').replace(/\\\//g, '/');
+    // Poster/image may be in _pV or in JW Player config
+    const poster = (pH.match(/poster:\s*"([^"]+)"/)?.[1] || pH.match(/image:\s*"([^"]+)"/)?.[1] || '').replace(/\\\//g, '/');
 
-    if (!vid || !ct) throw new Error('Could not extract player config (_cfg.vid / _cfg.ct)');
+    if (!vid || !ct) throw new Error('Could not extract player config (vid / ct)');
 
     // Decode vid to get CDN info
     const decoded = Buffer.from(vid, 'base64').toString();
     const [cdnUrl] = decoded.split('|');
     console.log(`[${this.name}] CDN: ${cdnUrl}`);
 
-    // Extract DOM challenge parts
-    const p1 = pH.match(/data-v="([^"]{8})"/)?.[1];
-    const p2 = (pH.match(/value="([^"]{8})"[^>]*class="cp2"/) || pH.match(/class="cp2"[^>]*value="([^"]{8})"/))?.[1];
-    const p3 = pH.match(/data-challenge="([^"]{8})"/)?.[1];
-    const p4 = pH.match(/<template[^>]*id="tpl"[^>]*><p>([^<]{8})<\/p>/)?.[1];
-    const ts = pH.match(/data-ts="(\d+)"/)?.[1];
-
-    if (!p1 || !p2 || !p3 || !p4 || !ts) {
-      throw new Error('Could not extract DOM challenge parts');
-    }
-
-    // Extract player-core URL
+    // Extract player-core URL (relative or absolute)
     const coreUrlMatch = pH.match(/src="([^"]*player-core[^"]*)"/);
     if (!coreUrlMatch) throw new Error('Could not find player-core script URL');
 
     // ── Step 4: Fetch player-core-v2.php ───────────────────────────────
-    const coreUrl = 'https://nhplayer.com' + coreUrlMatch[1];
+    const coreRaw = coreUrlMatch[1];
+    const coreUrl = coreRaw.startsWith('http') ? coreRaw
+      : 'https://nhplayer.com/' + coreRaw.replace(/^\//, '');
     console.log(`[${this.name}] Fetching player core...`);
     const coreResp = await got(coreUrl, {
       headers: { ...HEADERS, Referer: playerUrl },
-      timeout: { request: 15000 }
+      timeout: { request: 15000 },
+      cookieJar: jar,
     });
+    const coreJs = coreResp.body;
 
     // Extract server challenge token and request ID (obfuscated variable names)
-    const sc = coreResp.body.match(/var\s+\w+='([0-9a-f]+\.[0-9a-f]+)'/)?.[1];
-    const rid = coreResp.body.match(/var\s+\w+='([0-9a-f]{16})'/)?.[1];
+    const sc = coreJs.match(/var\s+\w+='([0-9a-f]+\.[0-9a-f]+)'/)?.[1];
+    const rid = coreJs.match(/var\s+\w+='([0-9a-f]{16})'/)?.[1];
     if (!sc || !rid) throw new Error('Could not extract server challenge token');
 
-    // ── Step 5: Compute Proof-of-Work ──────────────────────────────────
-    const powChallenge = p1 + p2 + p3 + p4 + ts;
+    // ── Step 5: Extract DOM challenge parts ────────────────────────────
+    // The player-core JS reads challenge values from DOM elements with
+    // randomized IDs and data-attribute names (the first hidden div is a
+    // honeypot; the real one uses IDs referenced in the JS).
+    //
+    // Parse the JS to find:  getElementById('xNNNNNN') → 5 element IDs
+    // Then getAttribute('data-XXXX') for p1, p3, and ts; .value for p2;
+    // .content.textContent for p4 (template element).
+    const domIds = [...coreJs.matchAll(/getElementById\('(\w+)'\)/g)].map(m => m[1]);
+    const dataAttrs = [...coreJs.matchAll(/\.getAttribute\('(data-[^']+)'\)/g)].map(m => m[1]);
+
+    if (domIds.length < 5 || dataAttrs.length < 3) {
+      throw new Error(`Could not parse DOM selectors from player-core (ids=${domIds.length}, attrs=${dataAttrs.length})`);
+    }
+
+    // The JS extracts parts in order: p1=e1.getAttribute(attr1), p2=e2.value,
+    // p3=e3.getAttribute(attr2), p4=e4.content.textContent, ts=e5.getAttribute(attr3)
+    const [id1, id2, id3, id4, id5] = domIds;
+    const [attr1, attr2, attr3] = dataAttrs;
+
+    // Look up the values from the player HTML's second hidden div
+    const p1 = pH.match(new RegExp(`id="${id1}"[^>]*${attr1}="([^"]{8})"`))?.[1]
+            || pH.match(new RegExp(`${attr1}="([^"]{8})"[^>]*id="${id1}"`))?.[1];
+    const p2El = pH.match(new RegExp(`id="${id2}"[^>]*value="([^"]{8})"`))?.[1]
+              || pH.match(new RegExp(`value="([^"]{8})"[^>]*id="${id2}"`))?.[1];
+    const p3 = pH.match(new RegExp(`id="${id3}"[^>]*${attr2}="([^"]{8})"`))?.[1]
+            || pH.match(new RegExp(`${attr2}="([^"]{8})"[^>]*id="${id3}"`))?.[1];
+    // p4: template element — <template id="xNNNNNN"><p>XXXXXXXX</p></template>
+    const p4 = pH.match(new RegExp(`<template[^>]*id="${id4}"[^>]*><p>([^<]{8})</p>`))?.[1];
+    // ts: data-attr3 on element id5
+    const ts = pH.match(new RegExp(`id="${id5}"[^>]*${attr3}="(\\d+)"`))?.[1]
+            || pH.match(new RegExp(`${attr3}="(\\d+)"[^>]*id="${id5}"`))?.[1];
+
+    if (!p1 || !p2El || !p3 || !p4 || !ts) {
+      throw new Error(`Could not extract DOM challenge parts (p1=${!!p1} p2=${!!p2El} p3=${!!p3} p4=${!!p4} ts=${!!ts})`);
+    }
+
+    console.log(`[${this.name}] Challenge parts extracted from randomized DOM`);
+
+    // ── Step 6: Compute Proof-of-Work ──────────────────────────────────
+    const powChallenge = p1 + p2El + p3 + p4 + ts;
     console.log(`[${this.name}] Computing PoW...`);
     const powStart = Date.now();
     const pow = this._computePoW(powChallenge);
@@ -200,7 +239,7 @@ export class UncensoredHentaiExtractor extends BaseExtractor {
 
     // ── Step 7: Call get-video-url-v2.php ──────────────────────────────
     const params = new URLSearchParams({
-      vid, c: ct, p1, p2, p3, p4, t: ts,
+      vid, c: ct, p1, p2: p2El, p3, p4, t: ts,
       sc, rid, fp, df: '', pow,
       pid: pid || '', st: st || ''
     });
@@ -214,6 +253,7 @@ export class UncensoredHentaiExtractor extends BaseExtractor {
         'X-Requested-With': 'XMLHttpRequest'
       },
       timeout: { request: 15000 },
+      cookieJar: jar,
       responseType: 'json'
     });
 

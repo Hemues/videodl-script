@@ -421,12 +421,19 @@ export class VideoDownloader extends EventEmitter {
       }));
 
       // Phase 3: Merge with ffmpeg (write to .incomplete path)
+      // Write chapters metadata file if chapters are available
+      let chaptersMetadataPath = null;
+      if (options.chapters && Array.isArray(options.chapters) && options.chapters.length > 0) {
+        chaptersMetadataPath = this._writeChaptersMetadata(finalPath + '.f_chapters.txt', options.chapters);
+      }
+
       const trackCount = audioTracksForMerge.length;
+      const chaptersLabel = chaptersMetadataPath ? ' + chapters' : '';
       const mergeLabel = subTmpPaths.length > 0
-        ? `Merging video + ${trackCount} audio track(s) + ${subTmpPaths.length} subtitle(s) with ffmpeg...`
-        : `Merging video + ${trackCount} audio track(s) with ffmpeg...`;
+        ? `Merging video + ${trackCount} audio track(s) + ${subTmpPaths.length} subtitle(s)${chaptersLabel} with ffmpeg...`
+        : `Merging video + ${trackCount} audio track(s)${chaptersLabel} with ffmpeg...`;
       this.emit('merge-phase', { phase: 'merge', label: mergeLabel });
-      await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths);
+      await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths, chaptersMetadataPath);
 
       // Phase 4: Post-merge validation — detect truncated output
       const validation = await this._validateMerge(ffmpegPath, videoTmpPath, primaryAudioPath, incompletePath);
@@ -444,7 +451,7 @@ export class VideoDownloader extends EventEmitter {
           } catch {}
         }
 
-        await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths);
+        await this._ffmpegMerge(ffmpegPath, videoTmpPath, audioTracksForMerge, incompletePath, subTmpPaths, chaptersMetadataPath);
 
         const retry = await this._validateMerge(ffmpegPath, videoTmpPath, primaryAudioPath, incompletePath);
         if (!retry.ok) {
@@ -471,6 +478,9 @@ export class VideoDownloader extends EventEmitter {
       for (const sub of subTmpPaths) {
         try { if (fs.existsSync(sub.path)) fs.unlinkSync(sub.path); } catch {}
       }
+      // Cleanup chapters metadata file
+      const chPath = finalPath + '.f_chapters.txt';
+      try { if (fs.existsSync(chPath)) fs.unlinkSync(chPath); } catch {}
     }
   }
 
@@ -990,14 +1000,49 @@ export class VideoDownloader extends EventEmitter {
   }
 
   /**
-   * Merge video + audio track(s) + optional subtitles with ffmpeg.
+   * Write an ffmetadata file with chapter markers for ffmpeg.
+   * @param {string} filepath - Path to write the ffmetadata file
+   * @param {Array<{start_time: number, end_time: number, title: string}>} chapters
+   * @returns {string|null} filepath if written, null if no chapters
+   */
+  _writeChaptersMetadata(filepath, chapters) {
+    if (!chapters || !Array.isArray(chapters) || chapters.length === 0) return null;
+
+    const lines = [';FFMETADATA1', ''];
+    for (const ch of chapters) {
+      // ffmetadata uses milliseconds with TIMEBASE=1/1000
+      const startMs = Math.round(ch.start_time * 1000);
+      const endMs = Math.round(ch.end_time * 1000);
+      // Escape special chars in title: =, ;, #, \ and newline
+      const title = (ch.title || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/=/g, '\\=')
+        .replace(/;/g, '\\;')
+        .replace(/#/g, '\\#')
+        .replace(/\n/g, ' ');
+      lines.push('[CHAPTER]');
+      lines.push('TIMEBASE=1/1000');
+      lines.push(`START=${startMs}`);
+      lines.push(`END=${endMs}`);
+      lines.push(`title=${title}`);
+      lines.push('');
+    }
+
+    fs.writeFileSync(filepath, lines.join('\n'), 'utf-8');
+    console.log(`[Chapters] Wrote ${chapters.length} chapter markers to ffmetadata file`);
+    return filepath;
+  }
+
+  /**
+   * Merge video + audio track(s) + optional subtitles + optional chapters with ffmpeg.
    * @param {string} ffmpegPath
    * @param {string} videoPath
    * @param {Array<{path, lang?, name?}>} audioTracks - Array of audio track objects
    * @param {string} outputPath
    * @param {Array<{path, lang, name}>} subtitlePaths
+   * @param {string|null} chaptersMetadataPath - Path to ffmetadata file with chapters
    */
-  _ffmpegMerge(ffmpegPath, videoPath, audioTracks, outputPath, subtitlePaths = []) {
+  _ffmpegMerge(ffmpegPath, videoPath, audioTracks, outputPath, subtitlePaths = [], chaptersMetadataPath = null) {
     return new Promise((resolve, reject) => {
       const args = [
         '-loglevel', 'warning',
@@ -1012,6 +1057,11 @@ export class VideoDownloader extends EventEmitter {
       // Add subtitle inputs
       for (const sub of subtitlePaths) {
         args.push('-i', sub.path);
+      }
+
+      // Add chapters metadata file as input (ffmetadata format)
+      if (chaptersMetadataPath) {
+        args.push('-i', chaptersMetadataPath);
       }
 
       // Copy video and audio streams
@@ -1057,6 +1107,12 @@ export class VideoDownloader extends EventEmitter {
         if (sub.name) {
           args.push(`-metadata:s:s:${i}`, `title=${sub.name}`);
         }
+      }
+
+      // Map chapters from the ffmetadata input
+      if (chaptersMetadataPath) {
+        const chaptersInputIndex = 1 + audioTracks.length + subtitlePaths.length;
+        args.push('-map_chapters', `${chaptersInputIndex}`);
       }
 
       // Explicitly set output format so ffmpeg doesn't rely on the
@@ -1326,6 +1382,21 @@ export class VideoDownloader extends EventEmitter {
       const hlsFmtMap = { mp4: 'mp4', mkv: 'matroska', webm: 'webm', m4a: 'ipod' };
       if (hlsFmtMap[hlsOutExt]) args.push('-f', hlsFmtMap[hlsOutExt]);
 
+      // Embed chapters if available
+      let hlsChaptersPath = null;
+      if (options.chapters && Array.isArray(options.chapters) && options.chapters.length > 0) {
+        hlsChaptersPath = filepath + '.f_chapters.txt';
+        this._writeChaptersMetadata(hlsChaptersPath, options.chapters);
+        args.push('-i', hlsChaptersPath);
+        // Figure out which input index the chapters file is
+        // Count -i arguments to find the index
+        let inputCount = 0;
+        for (let ai = 0; ai < args.length; ai++) {
+          if (args[ai] === '-i') inputCount++;
+        }
+        args.push('-map_chapters', `${inputCount - 1}`);
+      }
+
       args.push('-y', incompletePath);
 
       console.log(`[HLS] ffmpeg command: ${ffmpegPath} ${args.join(' ')}`);
@@ -1405,10 +1476,13 @@ export class VideoDownloader extends EventEmitter {
         }
       });
 
-      // Clean up temp variant playlist if we created one
+      // Clean up temp variant playlist and chapters file if we created them
       const cleanupVariantTemp = () => {
         if (variantTempFile) {
           try { fs.unlinkSync(variantTempFile); } catch {}
+        }
+        if (hlsChaptersPath) {
+          try { fs.unlinkSync(hlsChaptersPath); } catch {}
         }
       };
 

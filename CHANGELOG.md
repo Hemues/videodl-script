@@ -2,6 +2,23 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.91] - 2026-06-24
+
+### Fixed
+- **UncensoredHentai extractor** — fixed three bugs that broke extraction
+  from nhplayer.com-backed sites:
+  1. **Cookie jar** — added PHPSESSID persistence across all requests so
+     that `player-core-v2.php` returns actual JS instead of an empty IIFE.
+  2. **URL construction** — fixed missing `/` when building the player-core
+     URL from a relative path (caused DNS lookup failure).
+  3. **Challenge extraction** — the player HTML contains two hidden divs:
+     the first uses static selectors (`data-v`, `data-challenge`, etc.) as
+     a honeypot/decoy; the real challenge values live in a second div with
+     randomized DOM IDs and data-attribute names. The extractor now parses
+     the player-core JS to discover which element IDs and attributes it
+     references, then reads the correct values from the HTML. This fixes
+     the 403 Forbidden error from `get-video-url-v2.php`.
+
 ## [2.0.87] - 2026-04-25
 
 ### Added
