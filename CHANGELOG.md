@@ -2,6 +2,18 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.96] - 2026-04-28
+
+### Added
+- **StreamIMDb extractor** — new extractor for streamimdb.ru / VidAPI / VaPlayer
+  embed sites. Extracts HLS streams via the streamdata API and parses the master
+  playlist into quality variants (270p, 540p, 1080p, etc.).
+- **OpenSubtitles integration** — the StreamIMDb extractor searches OpenSubtitles
+  for Hungarian and English subtitles by IMDB ID and includes them for download.
+- **Gzip subtitle decompression** — `_downloadSubtitle()` now detects and
+  decompresses gzip-compressed subtitle files (used by OpenSubtitles download
+  links) before saving.
+
 ## [2.0.93] - 2026-04-28
 
 ### Added

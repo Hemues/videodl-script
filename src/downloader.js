@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
+import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 
@@ -965,12 +966,17 @@ export class VideoDownloader extends EventEmitter {
     const maxRetries = 6;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const response = await got(url, { headers, timeout: { request: 30000 } });
-        if (response.body.length === 0) {
+        const response = await got(url, { headers, timeout: { request: 30000 }, responseType: url.endsWith('.gz') ? 'buffer' : 'text' });
+        let body = response.body;
+        if (body.length === 0) {
           throw new Error('Subtitle download returned empty response');
         }
-        fs.writeFileSync(outputPath, response.body, 'utf-8');
-        return response.body.length;
+        // Decompress gzip if the response is a Buffer starting with gzip magic bytes
+        if (Buffer.isBuffer(body) && body[0] === 0x1f && body[1] === 0x8b) {
+          body = gunzipSync(body).toString('utf-8');
+        }
+        fs.writeFileSync(outputPath, typeof body === 'string' ? body : body.toString('utf-8'), 'utf-8');
+        return (typeof body === 'string' ? body : body.toString('utf-8')).length;
       } catch (e) {
         const status = e.response?.statusCode;
         const is429 = status === 429;

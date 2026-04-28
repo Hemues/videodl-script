@@ -44,6 +44,7 @@ import { AShemaleTubeExtractor } from './ashemaletube.js';
 import { EromeExtractor } from './erome.js';
 import { BingatoExtractor } from './bingato.js';
 import { Mat6tubeExtractor } from './mat6tube.js';
+import { StreamImdbExtractor } from './streamimdb.js';
 import { YtdlpExtractor } from './ytdlp.js';
 
 // Registry of all extractors
@@ -88,6 +89,7 @@ const EXTRACTORS = [
   EromeExtractor,
   BingatoExtractor,
   Mat6tubeExtractor,
+  StreamImdbExtractor,
   YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
   DirectExtractor  // Always try direct URL last
 ];
