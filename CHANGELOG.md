@@ -2,6 +2,17 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.97] - 2026-05-03
+
+### Fixed
+- **Eporner extractor rewrite** — replaced dload-link scraping with the proper
+  XHR video API. The old approach used `/dload/` redirect links which require
+  login for 1080p, resulting in a ~29 KB HTML login page saved as the video.
+  The new approach extracts `EP.video.player.hash`, computes the encoded hash
+  (hex→base36), and calls `/xhr/video/{vid}` with cookies to obtain direct CDN
+  MP4 URLs for all qualities (240p–1080p) plus an HLS adaptive playlist.
+- **Eporner title cleanup** — strip " - EPORNER" suffix from extracted titles.
+
 ## [2.0.96] - 2026-04-28
 
 ### Added

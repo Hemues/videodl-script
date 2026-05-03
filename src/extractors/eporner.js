@@ -6,9 +6,11 @@
  *   - eporner.com/video-{hash}/{slug}/
  *
  * Flow:
- *   1. Fetch video page
- *   2. Extract video hash and download links
- *   3. Eporner provides direct MP4 download links at various qualities
+ *   1. Fetch video page, capture cookies
+ *   2. Extract EP.video.player.vid and EP.video.player.hash
+ *   3. Compute encoded hash (hex → base36 conversion)
+ *   4. Call /xhr/video/{vid} API with computed hash + cookies
+ *   5. Parse response for direct CDN MP4 URLs and HLS playlist
  */
 
 import { BaseExtractor } from './base.js';
@@ -26,6 +28,19 @@ export class EpornerExtractor extends BaseExtractor {
     return /(?:^|\/\/)(?:www\.)?eporner\.com\/(?:video-|hd-porno\/)/i.test(url);
   }
 
+  /**
+   * Compute the encoded hash the same way the eporner player does:
+   * Split the 32-char hex hash into 4 groups of 8, parse each as hex int,
+   * convert to base-36 string, and concatenate.
+   */
+  _computeHash(hash) {
+    if (!hash || hash.length !== 32) return false;
+    return parseInt(hash.substring(0, 8), 16).toString(36) +
+           parseInt(hash.substring(8, 16), 16).toString(36) +
+           parseInt(hash.substring(16, 24), 16).toString(36) +
+           parseInt(hash.substring(24, 32), 16).toString(36);
+  }
+
   async extract(url, options = {}) {
     console.log(`[${this.name}] Extracting from: ${url}`);
 
@@ -33,6 +48,7 @@ export class EpornerExtractor extends BaseExtractor {
     const videoId = idMatch ? idMatch[1] : 'unknown';
     console.log(`[${this.name}] Video ID: ${videoId}`);
 
+    // Step 1: Fetch page and capture cookies
     const response = await got(url, {
       headers: {
         'User-Agent': USER_AGENT,
@@ -43,6 +59,12 @@ export class EpornerExtractor extends BaseExtractor {
     });
     const html = response.body;
 
+    const setCookies = response.headers['set-cookie'];
+    const cookieStr = (Array.isArray(setCookies) ? setCookies : [setCookies])
+      .filter(Boolean)
+      .map(c => c.split(';')[0])
+      .join('; ');
+
     // Extract title
     let title = null;
     const ogTitle = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i) ||
@@ -50,107 +72,139 @@ export class EpornerExtractor extends BaseExtractor {
     if (ogTitle) title = ogTitle[1];
     if (!title) {
       const titleTag = html.match(/<title>\s*([^<]+?)\s*<\/title>/i);
-      if (titleTag) title = titleTag[1].replace(/\s*-\s*EPORNER.*$/i, '').trim();
+      if (titleTag) title = titleTag[1];
     }
+    if (title) title = title.replace(/\s*-\s*EPORNER.*$/i, '').trim();
     if (!title) title = `Eporner_${videoId}`;
     console.log(`[${this.name}] Title: ${title}`);
 
-    // Extract duration (seconds)
+    // Extract duration
     let duration = 0;
     const durMatch = html.match(/<meta\s+property=["']og:(?:video:)?duration["']\s+content=["'](\d+)["']/i)
-                  || html.match(/"duration"\s*:\s*(\d{2,})/);
-    if (durMatch) duration = parseInt(durMatch[1]);
+                  || html.match(/"duration"\s*:\s*"?PT?(\d[^"]*)"?/i);
+    if (durMatch) {
+      const raw = durMatch[1];
+      if (/^\d+$/.test(raw)) {
+        duration = parseInt(raw);
+      } else {
+        const hm = raw.match(/(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        if (hm) duration = (parseInt(hm[1] || 0) * 3600) + (parseInt(hm[2] || 0) * 60) + parseInt(hm[3] || 0);
+      }
+    }
+
+    // Step 2: Extract player vid and hash
+    const vidMatch = html.match(/EP\.video\.player\.vid\s*=\s*'([^']+)'/);
+    const hashMatch = html.match(/EP\.video\.player\.hash\s*=\s*'([^']+)'/);
+    const playerVid = vidMatch ? vidMatch[1] : videoId;
+    const rawHash = hashMatch ? hashMatch[1] : null;
 
     const formats = [];
 
-    // Extract download links - pattern: /dload/{id}/{quality}/{filename}.mp4
-    const dloadMatches = html.matchAll(/\/dload\/[^"'\s]+/g);
-    const seenQualities = new Set();
-    for (const match of dloadMatches) {
-      const path = match[0];
-      // Extract quality from path like /dload/xxx/720/xxx-720p.mp4
-      const qualityMatch = path.match(/\/(\d{3,4})\//);
-      if (qualityMatch) {
-        const height = parseInt(qualityMatch[1]);
-        // Prefer non-av1 variants
-        const isAv1 = path.includes('-av1');
-        const key = `${height}${isAv1 ? '-av1' : ''}`;
-        if (!seenQualities.has(key)) {
-          seenQualities.add(key);
-          formats.push({
-            url: `https://www.eporner.com${path}`,
-            ext: 'mp4',
-            height,
-            width: Math.round(height * 16 / 9),
-            quality: `${height}p${isAv1 ? ' (AV1)' : ''}`,
-            hasVideo: true,
-            hasAudio: true,
-            format_id: `mp4-${height}p${isAv1 ? '-av1' : ''}`,
-            headers: {
-              'Referer': url,
-              'User-Agent': USER_AGENT,
-            },
-          });
-        }
-      }
-    }
+    // Step 3+4: Use XHR API for direct CDN URLs (preferred)
+    if (rawHash) {
+      const computedHash = this._computeHash(rawHash);
+      console.log(`[${this.name}] Player hash found, calling video API...`);
 
-    // Try to extract the video player config
-    const configMatch = html.match(/var\s+EP\s*=\s*\{([\s\S]*?)\};/) ||
-                        html.match(/vid_info\s*=\s*\{([\s\S]*?)\};/);
-
-    // Also try to find HLS source
-    const hlsMatch = html.match(/['"](?:hls|m3u8)['"]:\s*['"]([^'"]+\.m3u8[^'"]*)['"]/i);
-    if (hlsMatch) {
-      let hlsUrl = hlsMatch[1].replace(/\\/g, '');
-      if (hlsUrl.startsWith('//')) hlsUrl = 'https:' + hlsUrl;
-      formats.push({
-        url: hlsUrl,
-        ext: 'mp4',
-        height: 0,
-        quality: 'auto',
-        protocol: 'hls',
-        hasVideo: true,
-        hasAudio: true,
-        format_id: 'hls-auto',
-        formatNote: 'HLS',
+      const params = new URLSearchParams({
+        hash: computedHash,
+        domain: 'www.eporner.com',
+        pixelRatio: '1',
+        playerWidth: '920',
+        playerHeight: '518',
+        fallback: 'false',
+        embed: 'false',
+        supportedFormats: 'dash,hls',
+        _: Date.now().toString(),
       });
-    }
+      const xhrUrl = `https://www.eporner.com/xhr/video/${playerVid}?${params.toString()}`;
 
-    // Look for direct video source URLs in script tags
-    const sourceMatches = html.matchAll(/['"](?:src|file|video_url|url)['"]:\s*['"]([^'"]+\.mp4[^'"]*)['"]/gi);
-    for (const sm of sourceMatches) {
-      let src = sm[1].replace(/\\/g, '');
-      if (src.startsWith('//')) src = 'https:' + src;
-      if (!formats.some(f => f.url === src)) {
-        const hMatch = src.match(/(\d{3,4})p/);
-        const height = hMatch ? parseInt(hMatch[1]) : 480;
-        formats.push({
-          url: src,
-          ext: 'mp4',
-          height,
-          width: Math.round(height * 16 / 9),
-          quality: `${height}p`,
-          hasVideo: true,
-          hasAudio: true,
-          format_id: `mp4-script-${height}p`,
+      try {
+        const xhrResp = await got(xhrUrl, {
+          headers: {
+            'User-Agent': USER_AGENT,
+            'Referer': url,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Cookie': cookieStr,
+            'Accept': '*/*',
+          },
+          timeout: { request: 15000 },
+          throwHttpErrors: false,
         });
+
+        const data = JSON.parse(xhrResp.body);
+
+        if (data.available && data.sources) {
+          // Add MP4 sources
+          if (data.sources.mp4) {
+            for (const [label, info] of Object.entries(data.sources.mp4)) {
+              if (!info.src || info.src.includes('na.mp4')) continue;
+              const hMatch = (info.labelShort || label).match(/(\d+)p/);
+              const height = hMatch ? parseInt(hMatch[1]) : 480;
+              formats.push({
+                url: info.src,
+                ext: 'mp4',
+                height,
+                width: Math.round(height * 16 / 9),
+                quality: info.labelShort || `${height}p`,
+                hasVideo: true,
+                hasAudio: true,
+                format_id: `mp4-${height}p`,
+                isDefault: !!info.default,
+              });
+            }
+          }
+
+          // Add HLS source
+          if (data.sources.hls && data.sources.hls.auto && data.sources.hls.auto.src) {
+            formats.push({
+              url: data.sources.hls.auto.src,
+              ext: 'mp4',
+              height: 0,
+              quality: 'auto (HLS)',
+              protocol: 'hls',
+              hasVideo: true,
+              hasAudio: true,
+              format_id: 'hls-auto',
+              formatNote: 'HLS adaptive',
+            });
+          }
+        } else {
+          console.log(`[${this.name}] API returned available=false (code ${data.code}), falling back to dload links`);
+        }
+      } catch (e) {
+        console.log(`[${this.name}] API call failed: ${e.message}, falling back to dload links`);
       }
     }
 
-    // Fallback: og:video
+    // Fallback: dload links (only for qualities that don't require login)
     if (formats.length === 0) {
-      const ogVideo = html.match(/<meta[^>]+property="og:video(?::url|:secure_url)?"[^>]+content="([^"]+)"/i);
-      if (ogVideo) {
-        formats.push({
-          url: ogVideo[1].replace(/&amp;/g, '&'),
-          ext: 'mp4',
-          height: 720,
-          quality: '720p',
-          hasVideo: true,
-          hasAudio: true,
-          format_id: 'og-video',
-        });
+      console.log(`[${this.name}] Using dload link fallback...`);
+      const dloadMatches = html.matchAll(/\/dload\/[^"'\s]+/g);
+      const seenQualities = new Set();
+      for (const match of dloadMatches) {
+        const path = match[0];
+        const qualityMatch = path.match(/\/(\d{3,4})\//);
+        if (qualityMatch) {
+          const height = parseInt(qualityMatch[1]);
+          if (path.includes('-av1')) continue; // Skip AV1 variants in fallback
+          if (!seenQualities.has(height)) {
+            seenQualities.add(height);
+            formats.push({
+              url: `https://www.eporner.com${path}`,
+              ext: 'mp4',
+              height,
+              width: Math.round(height * 16 / 9),
+              quality: `${height}p`,
+              hasVideo: true,
+              hasAudio: true,
+              format_id: `mp4-dload-${height}p`,
+              headers: {
+                'Referer': url,
+                'User-Agent': USER_AGENT,
+              },
+            });
+          }
+        }
       }
     }
 
