@@ -2,6 +2,18 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.101] - 2026-05-09
+
+### Added
+- **Skool classroom extractor** — new extractor for skool.com classroom pages.
+  It parses the attached lesson video URL from the classroom metadata, delegates
+  format extraction to the YouTube extractor, and preserves the Skool lesson
+  title when an authenticated session cookie is available.
+
+### Fixed
+- **Skool attachment handoff** — classroom lessons now resolve to the attached
+  YouTube stream instead of stopping at the Skool page shell.
+
 ## [2.0.97] - 2026-05-03
 
 ### Fixed
