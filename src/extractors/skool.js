@@ -23,7 +23,7 @@ export class SkoolExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /(?:^|\/\/)(?:www\.)?skool\.com\/[^?#]+\/classroom\//i.test(url);
+    return /(?:^|\/\/)(?:www\.)?skool\.com\//i.test(url);
   }
 
   _extractTitle(html, url) {
@@ -74,6 +74,14 @@ export class SkoolExtractor extends BaseExtractor {
 
   async extract(url, options = {}) {
     console.log(`[${this.name}] Extracting from: ${url}`);
+
+    if (!/\/classroom\//i.test(url)) {
+      throw new Error(
+        `This Skool URL is not a classroom lesson page. Only classroom lesson URLs are supported for video download.\n` +
+        `Supported: skool.com/<community>/classroom/<id>?md=<lesson_id>\n` +
+        `Got: ${url}`
+      );
+    }
 
     const cookieHeader = options.cookies ? buildCookieHeader(options.cookies, url) : '';
 
