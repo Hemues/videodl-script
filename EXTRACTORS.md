@@ -49,7 +49,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **Erome** — erome.com (album pages, direct MP4)
 - ✅ **Bingato** — bingato.com (direct MP4)
 - ✅ **Mat6tube** — mat6tube.com (JWPlayer, pvvstream CDN)
-- ✅ **Skool** — skool.com classroom lessons (YouTube attachment handoff; title requires authenticated cookies)
+- ✅ **Skool** — skool.com classroom lessons (Mux HLS native video; YouTube fallback for older lessons; authenticated cookies required for correct title)
 - 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
 
@@ -265,13 +265,30 @@ videodl download "URL" -f 720p -H "Cookie: session=xxx"
 
 ### Skool — title shows as "EOS Club" or site name instead of lesson title
 
-Skool classroom pages require an authenticated session to expose the exact lesson title. Without cookies the page only reveals the community name (e.g. `EOS Club`).
+Skool uses a Next.js SSR architecture. The real lesson title and the signed Mux
+video token are only embedded in the `__NEXT_DATA__` JSON blob when the request
+is made with valid session cookies.
+
+**Root cause of wrong title/wrong video:**
+The Skool session cookie (`client_id`) is set for the parent domain `.skool.com`,
+not `www.skool.com`. Earlier versions of the browser extension used
+`chrome.cookies.getAll({domain: hostname})`, which only returns cookies whose
+`Domain` attribute exactly matches `www.skool.com` — missing `client_id`.
+The fix (extension ≥ 3.3.0) uses `chrome.cookies.getAll({url})` which returns
+all cookies the browser would send to that URL, including parent-domain ones.
 
 **Solutions:**
-- Use the **videodl-remote-edge extension** while logged into Skool in your browser — it automatically captures and forwards your Skool session cookies with the download request.
-- Or pass a cookie file exported from your logged-in browser session: `videodl download "URL" --cookies cookies.txt`
+- Use the **videodl-remote-edge extension ≥ 3.3.0** while logged into Skool —
+  it captures all cookies (including `.skool.com` scoped ones) and forwards them.
+- Or export a full Netscape cookie file from your browser:
+  `videodl download "URL" --cookies cookies.txt`
 
-The video itself is always downloaded regardless of authentication, because Skool classroom pages embed a YouTube `video_url` attachment that the extractor hands off to the YouTube extractor.
+With valid cookies the extractor will:
+1. Read the lesson title from `__NEXT_DATA__.props.pageProps.course.children[0].course.metadata.title`.
+2. Download the Mux HLS video at `https://stream.mux.com/<playbackId>.m3u8?token=<jwt>`.
+
+> **Note:** The Mux `playbackToken` is short-lived (a few hours). The extractor
+> always fetches a fresh token at download time, so links are not pre-shareable.
 
 ### yt-dlp Fallback Not Working
 

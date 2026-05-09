@@ -2,6 +2,25 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.104] - 2026-05-09
+
+### Fixed
+- **Skool extractor — Mux video support** — Skool lessons use a Mux-hosted HLS
+  video (`pageProps.video`), not a YouTube attachment. The extractor now parses
+  the `__NEXT_DATA__` JSON blob (SSR data) directly instead of scraping HTML
+  text, finds the Mux `playbackId` and short-lived `playbackToken`, and builds a
+  signed HLS URL (`https://stream.mux.com/<playbackId>.m3u8?token=<jwt>`).
+  Falls back to a YouTube URL in the lesson content if no Mux video is present.
+- **Skool extractor — correct title** — Title is now read from
+  `pageProps.course.children[0].course.metadata.title` (clean lesson name with
+  no site-suffix), with a fallback to `pageProps.settings.pageTitle` and the
+  `<title>` HTML tag.  Previously the `<title>` tag returned "EOS Club" when the
+  page was fetched without valid session cookies.
+- **Extension cookie capture** — `chrome.cookies.getAll({url})` is now used
+  instead of `{domain: hostname}`, so parent-domain cookies (e.g. `client_id`
+  set for `.skool.com`) are forwarded correctly to the server, enabling
+  authenticated page fetches that return the real lesson title and video.
+
 ## [2.0.101] - 2026-05-09
 
 ### Added
