@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-41 built-in extractors + yt-dlp fallback:
+42 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -49,6 +49,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **Erome** — erome.com (album pages, direct MP4)
 - ✅ **Bingato** — bingato.com (direct MP4)
 - ✅ **Mat6tube** — mat6tube.com (JWPlayer, pvvstream CDN)
+- ✅ **Skool** — skool.com classroom lessons (YouTube attachment handoff; title requires authenticated cookies)
 - 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
 
@@ -261,6 +262,16 @@ videodl download "URL" -f 720p --no-ssl-verify
 # Add custom headers
 videodl download "URL" -f 720p -H "Cookie: session=xxx"
 ```
+
+### Skool — title shows as "EOS Club" or site name instead of lesson title
+
+Skool classroom pages require an authenticated session to expose the exact lesson title. Without cookies the page only reveals the community name (e.g. `EOS Club`).
+
+**Solutions:**
+- Use the **videodl-remote-edge extension** while logged into Skool in your browser — it automatically captures and forwards your Skool session cookies with the download request.
+- Or pass a cookie file exported from your logged-in browser session: `videodl download "URL" --cookies cookies.txt`
+
+The video itself is always downloaded regardless of authentication, because Skool classroom pages embed a YouTube `video_url` attachment that the extractor hands off to the YouTube extractor.
 
 ### yt-dlp Fallback Not Working
 
