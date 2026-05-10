@@ -2,6 +2,17 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.106] - 2026-05-10
+
+### Fixed
+- **Skool extractor — Mux 403 Forbidden** — Mux signed playback URLs use a
+  Referrer-domain restriction (Skool's `playback_restriction_id`).  Without a
+  matching `Referer` header ffmpeg got HTTP 403.  The extractor now attaches
+  `Referer: https://www.skool.com/`, `Origin: https://www.skool.com` and a
+  browser-like `User-Agent` to the format object so the downloader forwards
+  them to ffmpeg via the `-headers` option.  Verified with curl: without
+  `Referer` → 403; with `Referer` → 200.
+
 ## [2.0.104] - 2026-05-09
 
 ### Fixed

@@ -138,6 +138,14 @@ export class SkoolExtractor extends BaseExtractor {
 
       console.log(`[${this.name}] Mux video: ${muxVideo.playbackId}, duration: ${duration}s`);
 
+      // Mux signed playback URLs enforce a Referer/Origin allow-list (Skool's
+      // playback restriction).  Without these headers ffmpeg gets HTTP 403.
+      const muxHeaders = {
+        'Referer': 'https://www.skool.com/',
+        'Origin': 'https://www.skool.com',
+        'User-Agent': USER_AGENT,
+      };
+
       return {
         id: lessonId || muxVideo.id,
         title,
@@ -151,10 +159,12 @@ export class SkoolExtractor extends BaseExtractor {
             isHLS: true,
             masterPlaylistUrl: muxUrl,
             label: 'best',
+            headers: muxHeaders,
           }
         ],
         duration,
         extractor: this.name,
+        headers: muxHeaders,
       };
     }
 
