@@ -2,6 +2,18 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.110] - 2026-05-10
+
+### Fixed
+- **Skool extractor — classroom name now included in title** — The lesson title
+  breadcrumb now starts from the course root (classroom name) and goes all the
+  way down to the lesson, joined with ` - `.
+  Examples after fix:
+  - `classroom/d75e54b9` lesson → `"Moziterem - 2018-as Mesterkurzus novemberi modul összefoglaló"`
+  - `classroom/ff51c754` lesson → `"Életed alapjai - Mire alapozhatod a jövőd?"`
+  - `classroom/4fd35d76` top-level → `"Leader-Follow Modell - LFM Bevezető előadás"`
+  - `classroom/4fd35d76` nested → `"Leader-Follow Modell - Katasztrófapontok - 1. Találkozás - Bemutatkozás"`
+
 ## [2.0.108] - 2026-05-10
 
 ### Fixed

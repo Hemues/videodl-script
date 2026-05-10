@@ -73,11 +73,13 @@ export class SkoolExtractor extends BaseExtractor {
    *
    * Strategy:
    *  1. Use `selectedModule` (the active lesson id) and walk the course tree
-   *     to build a breadcrumb [courseRoot, section?, ..., lesson].  Drop the
-   *     course-root and join intermediate sections + lesson with " - " so the
-   *     resulting title is e.g. "Katasztrófapontok - 1. Találkozás / …".
-   *     Replace any `/` in the title with `-` (filesystem-unsafe and the
-   *     downstream sanitizer would otherwise drop the slash entirely).
+   *     to build a breadcrumb [courseRoot, section?, ..., lesson].  Join all
+   *     parts with " - " so the resulting title is e.g.:
+   *       "Moziterem - 2018-as Mesterkurzus novemberi modul összefoglaló"
+   *       "Leader-Follow Modell - LFM Bevezető előadás"
+   *       "Leader-Follow Modell - Katasztrófapontok - 1. Találkozás - Bemutatkozás"
+   *     Replace any `/` in titles with ` - ` (filesystem-unsafe and the
+   *     downstream sanitizer would otherwise strip the slash entirely).
    *  2. Fall back to the SSR page title, stripping Skool's "· Community" suffix.
    */
   _titleFromNextData(pageProps) {
@@ -88,9 +90,8 @@ export class SkoolExtractor extends BaseExtractor {
     if (courseTree && selectedId) {
       const path = this._findLessonPath(courseTree, selectedId);
       if (path && path.length) {
-        // Drop the course-root title, keep section(s) + lesson
-        const parts = path.length > 1 ? path.slice(1) : path;
-        const joined = parts.join(' - ');
+        // Include the course-root (classroom name) through to the lesson
+        const joined = path.join(' - ');
         const safe = joined.replace(/\s*\/\s*/g, ' - ').trim();
         if (safe) return safe;
       }
