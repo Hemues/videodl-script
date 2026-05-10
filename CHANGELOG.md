@@ -2,6 +2,22 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.108] - 2026-05-10
+
+### Fixed
+- **Skool extractor — lesson title now uses section breadcrumb** — Previously
+  the extractor took `course.children[0].course.metadata.title`, which is just
+  the first top-level entry in the classroom (e.g. always "LFM Bevezető
+  előadás"), so any lesson nested under a section returned the wrong title.
+  The extractor now reads `pageProps.selectedModule` (the active lesson id),
+  walks the full course tree to find that lesson, and builds the title as
+  `"<section> - <lesson>"` (joining intermediate sections with ` - `, dropping
+  the course-root title).  Forward slashes inside titles are converted to
+  ` - ` so the downstream filename sanitizer doesn't strip them.
+  Example: lesson "1. Találkozás / Bemutatkozás" inside section
+  "Katasztrófapontok" now resolves to
+  `"Katasztrófapontok - 1. Találkozás - Bemutatkozás"`.
+
 ## [2.0.106] - 2026-05-10
 
 ### Fixed

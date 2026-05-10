@@ -46,22 +46,62 @@ export class SkoolExtractor extends BaseExtractor {
     }
   }
 
-  /** Extract the clean lesson title from parsed __NEXT_DATA__. */
-  _titleFromNextData(pageProps) {
-    // 1. Prefer the lesson's own metadata title (clean, no suffix)
-    const lessonTitle =
-      pageProps?.course?.children?.[0]?.course?.metadata?.title ||
-      pageProps?.renderData?.course?.children?.[0]?.course?.metadata?.title;
-    if (lessonTitle && typeof lessonTitle === 'string' && lessonTitle.trim()) {
-      return lessonTitle.trim();
+  /**
+   * Walk the course tree and find the selected lesson by id, returning the
+   * breadcrumb of titles from the course root down to (and including) the
+   * lesson.  Returns null if not found.
+   */
+  _findLessonPath(node, targetId, parents = []) {
+    if (!node || typeof node !== 'object') return null;
+    const course = node.course || node;
+    const id = course?.id;
+    const title = course?.metadata?.title;
+    const newParents = title ? [...parents, title] : parents;
+    if (id && id === targetId) return newParents;
+    const children = node.children || course?.children;
+    if (Array.isArray(children)) {
+      for (const child of children) {
+        const found = this._findLessonPath(child, targetId, newParents);
+        if (found) return found;
+      }
     }
-    // 2. Fall back to the SSR page title, stripping Skool's suffix
+    return null;
+  }
+
+  /**
+   * Extract the clean lesson title from parsed __NEXT_DATA__.
+   *
+   * Strategy:
+   *  1. Use `selectedModule` (the active lesson id) and walk the course tree
+   *     to build a breadcrumb [courseRoot, section?, ..., lesson].  Drop the
+   *     course-root and join intermediate sections + lesson with " - " so the
+   *     resulting title is e.g. "Katasztrófapontok - 1. Találkozás / …".
+   *     Replace any `/` in the title with `-` (filesystem-unsafe and the
+   *     downstream sanitizer would otherwise drop the slash entirely).
+   *  2. Fall back to the SSR page title, stripping Skool's "· Community" suffix.
+   */
+  _titleFromNextData(pageProps) {
+    const courseTree =
+      pageProps?.course || pageProps?.renderData?.course;
+    const selectedId =
+      pageProps?.selectedModule || pageProps?.renderData?.selectedModule;
+    if (courseTree && selectedId) {
+      const path = this._findLessonPath(courseTree, selectedId);
+      if (path && path.length) {
+        // Drop the course-root title, keep section(s) + lesson
+        const parts = path.length > 1 ? path.slice(1) : path;
+        const joined = parts.join(' - ');
+        const safe = joined.replace(/\s*\/\s*/g, ' - ').trim();
+        if (safe) return safe;
+      }
+    }
+    // Fall back to the SSR page title, stripping Skool's suffix
     const pageTitle = pageProps?.settings?.pageTitle || pageProps?.renderData?.settings?.pageTitle;
     if (pageTitle && typeof pageTitle === 'string') {
       return pageTitle
-        .replace(/\s*[\-–—]\s*Moziterem\s*·\s*[^·]+$/i, '')
-        .replace(/\s*[\-–—]\s*[^·]+$/i, '')
         .replace(/\s*·\s*[^·]+$/i, '')
+        .replace(/\s*[\-–—]\s*[^\-–—]+$/i, '')
+        .replace(/\s*\/\s*/g, ' - ')
         .trim();
     }
     return null;
