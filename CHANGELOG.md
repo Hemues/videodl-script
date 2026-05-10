@@ -2,6 +2,20 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.112] - 2026-05-10
+
+### Added
+- **Skool extractor — community post pages now supported** — URLs of the form
+  `skool.com/<community>/<post-slug>` are accepted alongside the existing
+  classroom lesson URLs.  Posts that embed a Mux video are downloaded as HLS
+  with the post title taken from `pageProps.postTree.post.metadata.title`.
+  Example: `skool.com/eos-club-4176/klubhetvege-majus-10-vasarnap-delutan` →
+  `"Klubhétvége Május 10 vasárnap délután"`.
+  The previous "only classroom URLs supported" hard error has been removed.
+
+  Note: tag `v2.0.111` had already been published for the v2.0.110 code; this
+  release skips that number to avoid a tag collision.
+
 ## [2.0.110] - 2026-05-10
 
 ### Fixed

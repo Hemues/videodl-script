@@ -1,15 +1,21 @@
 /**
  * Skool Extractor
- * Extracts classroom lesson videos from skool.com
+ * Extracts videos from skool.com
  *
- * Skool is a Next.js SPA. Lesson metadata (title, video) is embedded in the
+ * Skool is a Next.js SPA. Page metadata (title, video) is embedded in the
  * __NEXT_DATA__ JSON blob of the server-rendered HTML.  When the user is
  * authenticated (cookies forwarded from the browser extension) the server
- * returns the full lesson title and the Mux video token required for playback.
+ * returns the full title and the Mux video token required for playback.
+ *
+ * Supported page types:
+ *  1. Classroom lesson — `skool.com/<community>/classroom/<id>?md=<lesson_id>`
+ *     pageProps.course (course tree) + pageProps.selectedModule + pageProps.video
+ *  2. Community post — `skool.com/<community>/<post-slug>`
+ *     pageProps.postTree.post.metadata.title + pageProps.postTree.videos[0]
  *
  * Video types handled (in priority order):
- *  1. Mux video  — embedded directly in the lesson (pageProps.video)
- *  2. YouTube fallback — attached YouTube URL in lesson content (rare)
+ *  1. Mux video — embedded directly in the lesson/post
+ *  2. YouTube fallback — attached YouTube URL in content (rare)
  *
  * Authentication note: the Skool session cookie (client_id) is scoped to the
  * parent domain .skool.com.  The extension must use chrome.cookies.getAll({url})
@@ -108,11 +114,37 @@ export class SkoolExtractor extends BaseExtractor {
     return null;
   }
 
-  /** Extract a Mux video object from __NEXT_DATA__ if present. */
+  /** Extract a Mux video object from __NEXT_DATA__ if present.
+   *  Looks at the well-known classroom location (pageProps.video) first,
+   *  then the post location (pageProps.postTree.videos[0]).
+   */
   _muxFromNextData(pageProps) {
-    const video = pageProps?.video || pageProps?.renderData?.video;
-    if (video?.playbackId && video?.playbackToken) {
-      return video;
+    // Classroom lesson
+    const classroomVideo = pageProps?.video || pageProps?.renderData?.video;
+    if (classroomVideo?.playbackId && classroomVideo?.playbackToken) {
+      return classroomVideo;
+    }
+    // Community post
+    const postVideos =
+      pageProps?.postTree?.videos
+      || pageProps?.renderData?.postTree?.videos
+      || pageProps?.settings?.postMeta?.postTree?.videos;
+    if (Array.isArray(postVideos)) {
+      const v = postVideos.find(x => x?.playbackId && x?.playbackToken);
+      if (v) return v;
+    }
+    return null;
+  }
+
+  /** Extract a clean title for a community post page. */
+  _titleFromPostData(pageProps) {
+    const post =
+      pageProps?.postTree?.post
+      || pageProps?.renderData?.postTree?.post
+      || pageProps?.settings?.postMeta?.postTree?.post;
+    const t = post?.metadata?.title;
+    if (typeof t === 'string' && t.trim()) {
+      return t.replace(/\s*\/\s*/g, ' - ').trim();
     }
     return null;
   }
@@ -135,14 +167,7 @@ export class SkoolExtractor extends BaseExtractor {
   async extract(url, options = {}) {
     console.log(`[${this.name}] Extracting from: ${url}`);
 
-    if (!/\/classroom\//i.test(url)) {
-      throw new Error(
-        `This Skool URL is not a classroom lesson page. Only classroom lesson URLs are supported for video download.\n` +
-        `Supported: skool.com/<community>/classroom/<id>?md=<lesson_id>\n` +
-        `Got: ${url}`
-      );
-    }
-
+    const isClassroom = /\/classroom\//i.test(url);
     const cookieHeader = options.cookies ? buildCookieHeader(options.cookies, url) : '';
 
     const response = await got(url, {
@@ -159,15 +184,23 @@ export class SkoolExtractor extends BaseExtractor {
     const html = response.body;
     const lessonId = url.match(/[?&]md=([a-zA-Z0-9]+)/)?.[1]
       || url.match(/\/classroom\/([a-zA-Z0-9]+)/)?.[1];
+    const postSlug = !isClassroom
+      ? url.match(/skool\.com\/[^/]+\/([^/?#]+)/i)?.[1]
+      : null;
 
     // --- Parse __NEXT_DATA__ ---
     const nextData = this._parseNextData(html);
     const pageProps = nextData?.props?.pageProps || {};
 
     // --- Title ---
-    const title = this._titleFromNextData(pageProps)
+    // Classroom path: walk the course tree using selectedModule.
+    // Post path: read postTree.post.metadata.title.
+    const title =
+      (isClassroom
+        ? this._titleFromNextData(pageProps)
+        : (this._titleFromPostData(pageProps) || this._titleFromNextData(pageProps)))
       || html.match(/<title>\s*([^<]+?)\s*<\/title>/i)?.[1]?.replace(/\s*[\-–—][^<]+$/, '').trim()
-      || `Skool_${lessonId || 'lesson'}`;
+      || `Skool_${lessonId || postSlug || 'lesson'}`;
 
     console.log(`[${this.name}] Title: ${title}`);
 
@@ -188,7 +221,7 @@ export class SkoolExtractor extends BaseExtractor {
       };
 
       return {
-        id: lessonId || muxVideo.id,
+        id: lessonId || postSlug || muxVideo.id,
         title,
         url,
         formats: [
@@ -209,12 +242,12 @@ export class SkoolExtractor extends BaseExtractor {
       };
     }
 
-    // --- Fallback: YouTube URL in lesson content ---
+    // --- Fallback: YouTube URL in lesson/post content ---
     const ytUrl = this._extractYouTubeUrl(html);
     if (!ytUrl) {
       throw new Error(
-        'No video found in this Skool lesson. ' +
-        'The lesson may require authentication — make sure you are logged into ' +
+        `No video found in this Skool ${isClassroom ? 'lesson' : 'post'}. ` +
+        'The page may require authentication — make sure you are logged into ' +
         'Skool in your browser when using the browser extension to send URLs.'
       );
     }
@@ -224,7 +257,7 @@ export class SkoolExtractor extends BaseExtractor {
 
     return {
       ...attachedInfo,
-      id: lessonId || attachedInfo.id,
+      id: lessonId || postSlug || attachedInfo.id,
       title,
       duration: attachedInfo.duration,
       extractor: this.name,
