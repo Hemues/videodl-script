@@ -1,140 +1,66 @@
-# YouTube Support - Known Limitations
+# YouTube Support & Limitations
 
-## Status
+## Status: ✅ Downloads work (up to 2160p / 4K)
 
-The YouTube extractor can:
-- ✅ Extract video metadata (title, video ID)
-- ✅ Parse available formats from the page
-- ✅ Identify format quality and codecs
-- ⚠️ Download limitations (see below)
+The YouTube extractor performs full native extraction — it is **not** limited to
+metadata or 360p. It:
 
-## Download Limitations
+- Fetches the watch page → player JS → `visitorData` / `signatureTimestamp`
+- Rotates **InnerTube API clients** (see `src/extractors/youtube.js`
+  `INNERTUBE_CLIENTS`), preferring clients whose media URLs need **no PO token**
+- Solves the **`n` throttling** and **`signatureCipher`** challenges via the EJS
+  solver (`vendor/yt.solver.core.js`, meriyah + astring)
+- Probes each candidate CDN URL (small Range request) before committing, and
+  downloads DASH video+audio (+subtitles) then muxes with ffmpeg
 
-YouTube implements several protections that make direct downloading challenging:
+Primary client is **`ANDROID_VR` (pinned `1.65.10`)**: it returns direct
+DASH/HTTPS URLs, needs **no PO token and no player-JS**, and yields the full
+quality ladder up to **2160p**. `TV` and `WEB_EMBEDDED` are no-token fallbacks.
 
-### 1. IP Address Binding
-YouTube embeds IP addresses in video URLs (e.g., `ip=x.x.x.x`). Requests must come from the same IP that fetched the page.
+## Real limitations (2026)
 
-### 2. Bot Detection
-YouTube's sophisticated bot detection may block automated download attempts, resulting in **403 Forbidden** errors.
+### 1. Age-restricted / token-gated videos ⚠️
+Some videos are only served by clients whose `*.googlevideo.com` media URLs
+**require a `gvs` PO token** (`IOS`, `WEB`, `MWEB`, …). Without a token the CDN
+returns **HTTP 403**. `videodl-cli` demotes those clients to last resort and
+relies on `ANDROID_VR`/`TV`, which cover the vast majority of videos.
 
-### 3. Signature Encryption
-Most high-quality formats use encrypted signatures (`signatureCipher`) instead of direct URLs, requiring JavaScript execution to decrypt.
+**gvs PO-token minting is currently DEFERRED.** A working minter (BotGuard via
+`bgutils-js` + `jsdom`) is proven under real Node.js and kept at
+`contrib/po-token-provider.mjs`, but jsdom **cannot be bundled into the Node SEA
+binary** and a minimal DOM shim fails BotGuard. The planned path is an external
+**sidecar PO-token provider** (yt-dlp's own architecture). Full write-up:
+`LESSONS-LEARNED.md #14`.
 
-### 4. Limited Direct URLs
-Only low-quality formats (typically 360p) provide direct URLs. Higher qualities (720p, 1080p, 4K) use adaptive streaming with encrypted signatures.
+Practical effect: **age-restricted and a few token-gated videos may still 403**;
+everything else downloads normally.
 
-## Current Behavior
+### 2. SABR-only responses
+Newer client versions (e.g. `ANDROID_VR > 1.65`, `web`/`web_safari`) increasingly
+return **SABR-only** streams (`serverAbrStreamingUrl`, no plain `url`), which are
+not downloadable here. This is why `ANDROID_VR` is **pinned `≤ 1.65`**. If you
+bump a client version and downloads stop, suspect SABR.
 
-**Test Video**: `https://www.youtube.com/watch?v=<VIDEO_ID>`
+### 3. IP binding & URL expiry (handled)
+Media URLs embed the requesting IP (`ip=…`) and an `expire=…` timestamp. Requests
+must egress from the same IP that extracted the page; URLs are single-use and
+short-lived. `videodl-cli` handles this by downloading immediately after extract.
 
-**Extraction**: ✅ Works
-```
-[YouTube] Video ID: cWVKSQjsmTE
-[YouTube] Title: Toyota Auris 1.8 HSD Teszt - Bemutató - Eladó
-[YouTube] Found 26 formats
-[YouTube] Found 360p video/mp4 (video+audio)
-```
+### 4. Subtitle rate-limiting
+YouTube's `&tlang=` auto-translate endpoint is aggressively rate-limited (HTTP
+429); the extractor retries with backoff.
 
-**Download**: ❌ 403 Forbidden
-```
-Error: Request failed with status code 403 (Forbidden)
-```
+## Keeping YouTube working
 
-## Why This Happens
+YouTube changes its clients/policies constantly. When downloads start failing
+(403s, "no streaming data", SABR), **re-sync the client table with yt-dlp** —
+see [`UPDATE-FROM-YTDLP.md`](UPDATE-FROM-YTDLP.md) (run `./update-from-ytdlp.sh
+check`) and `LESSONS-LEARNED.md #14`. Extraction (not download) breakage may
+instead point at the `n`/sig solver needing an update as YouTube's player JS
+evolves.
 
-1. **360p format** is the onlyformat with a direct URL out of 26 total formats
-2. **URL contains**: `ip=x.x.x.x` (IP binding)
-3. **URL expires**: Contains `expire=1770760388` timestamp
-4. **Bot detection**: YouTube detects automated access
+## yt-dlp fallback
 
-## Workarounds
-
-### Option 1: Use yt-dlp Backend
-For reliable YouTube downloads, integrate with yt-dlp:
-```bash
-# Install yt-dlp
-pip install yt-dlp
-
-# Use from Node.js
-import { exec } from 'child_process';
-exec('yt-dlp -f best "URL"', (error, stdout, stderr) => {
-  // Handle download
-});
-```
-
-### Option 2: Browser Automation
-Use Puppeteer/Playwright to access YouTube as a real browser:
-- Executes JavaScript
-- Maintains cookies and session
-- Bypasses bot detection
-- Can decrypt signatures
-
-### Option 3: Accept Limitations
-- Only extract metadata
-- Link to YouTube directly for viewing
-- Document that download may not work
-
-## Recommended Approach
-
-For the videodl-cli project:
-
-1. **Keep the current extractor** for metadata extraction
-2. **Document limitations** in README
-3. **Add yt-dlp integration** as optional backend:
-   ```javascript
-   // Check if yt-dlp is available
-   if (isYouTubeUrl(url) && ytDlpAvailable()) {
-     return await downloadWithYtDlp(url);
-   }
-   ```
-
-## Testing Status
-
-All header combinations tested:
-- ❌ Original headers → 403
-- ❌ With Range header → 403
-- ❌ Minimal headers → 403
-- ❌ Browser-like headers → 403
-- ❌ With cookies → 403
-- ❌ Raw HTTPS module → 403
-
-**Conclusion**: The 403 error is not a header/client issue but YouTube's access control.
-
-## Future Enhancements
-
-1. Add yt-dlp backend support
-2. Implement signature decryption (complex)
-3. Add browser automation option
-4. Cache working URLs (limited by expiration)
-5. Support age-restricted videos
-6. Handle private/unlisted videos
-
-## User Communication
-
-When YouTube download fails:
-```
-⚠️  YouTube download blocked (403 Forbidden)
-
-YouTube restricts direct video downloads. This video may require:
-- yt-dlp: Install with 'pip install yt-dlp'
-- Browser: Play directly at the original URL
-
-Metadata extracted successfully:
-  Title: Toyota Auris 1.8 HSD Teszt - Bemutató - Eladó
-  Quality: 360p (640x360)
-```
-
-## Related Issues
-
-- IP address binding in URLs
-- Signature encryption (requires JS execution)
-- Bot detection (sophisticated fingerprinting)
-- Rate limiting (too many requests → temporary ban)
-- Geo-restrictions (some videos blocked by country)
-
-## References
-
-- yt-dlp: https://github.com/yt-dlp/yt-dlp
-- YouTube Data API: https://developers.google.com/youtube/v3
-- Video DownloadHelper approach: Use browser extension context
+For sites `videodl-cli` has no native extractor for, the container delegates to a
+pre-installed **yt-dlp** fallback. For YouTube specifically the native extractor
+takes priority (it's faster and supports Premium bitrate upgrades).

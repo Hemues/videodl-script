@@ -2,6 +2,19 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **`update-from-ytdlp.sh` + `UPDATE-FROM-YTDLP.md`** — repeatable process to
+  re-sync the YouTube client table from yt-dlp and ship it end-to-end (rebuild
+  CLI → publish → embed in videodl-container → deploy → verify). `check` mode
+  diffs yt-dlp's live `INNERTUBE_CLIENTS` against ours; `ship` runs the pipeline.
+
+### Docs
+- Rewrote `YOUTUBE-LIMITATIONS.md` to reflect current reality (downloads work to
+  2160p; real limitation is age-restricted/token-gated needing a gvs PO token,
+  deferred — see `LESSONS-LEARNED.md #14`).
+
 ## [2.0.121] - 2026-07-05
 
 ### Fixed

@@ -26,7 +26,7 @@ A powerful CLI video downloader and converter with **35 built-in site extractors
 
 | Site | URL | Notes |
 |------|-----|-------|
-| YouTube | youtube.com, youtu.be | Metadata extraction works; downloads may be blocked (see [limitations](YOUTUBE-LIMITATIONS.md)) |
+| YouTube | youtube.com, youtu.be | Full downloads up to 2160p (native client rotation + n/sig solving). Age-restricted/token-gated may 403 — see [limitations](YOUTUBE-LIMITATIONS.md) |
 | xHamster | xhamster.com | Full support |
 | PornHub | pornhub.com | Full support |
 | XVideos | xvideos.com | Full support |
@@ -609,7 +609,11 @@ videodl download --no-ssl-verify "https://example.com/video.mp4"
 
 ### 403 Forbidden on YouTube
 
-YouTube blocks most automated downloads. See [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md). For reliable YouTube downloads, use [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+Most YouTube videos download fine (up to 2160p) via the primary `ANDROID_VR`
+client. A persistent 403 usually means either an **age-restricted / token-gated**
+video (needs a `gvs` PO token — deferred, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
+or that YouTube changed its clients and the table needs re-syncing with yt-dlp —
+run `./update-from-ytdlp.sh check` (see [UPDATE-FROM-YTDLP.md](UPDATE-FROM-YTDLP.md)).
 
 ### Cookie Errors
 
