@@ -22,6 +22,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 11. [SEA binaries must be built with official Node.js binary](#11--sea-binaries-must-be-built-with-official-nodejs-binary)
 12. [Chapter Embedding via ffmetadata](#12--chapter-embedding-via-ffmetadata)
 13. [ffmpeg -map 0 Required When Remuxing Multi-Stream Files](#13--ffmpeg--map-0-required-when-remuxing-multi-stream-files)
+14. [YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)](#14--youtube-403--client-table--gvs-po-tokens-phase-2-deferred)
 
 ---
 
@@ -339,4 +340,53 @@ of the same type MUST use `-map 0` (or explicit `-map 0:v -map 0:a -map 0:s`) to
 preserve them all. This applies to disposition changes, metadata edits, and any
 `-c copy` pass-through operation.
 
-**Last update:** 2026-04-25
+---
+
+## #14 — YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)
+
+**Status:** ✅ Phase 1 verified in production · ⏳ Phase 2 deferred
+
+**Symptom:** YouTube downloads intermittently failed with `HTTP 403 Forbidden` on
+`*.googlevideo.com/videoplayback` media URLs, even though extraction succeeded.
+
+**Root cause (verified against yt-dlp master, mid-2026):**
+- The `IOS` client now marks its media URLs as **requiring a `gvs` PO token**
+  (`GvsPoTokenPolicy(required=True)`); without one the CDN 403s. It was near the
+  front of our client rotation.
+- `ANDROID_VR` was pinned to `1.71.26`, but client versions **`> 1.65` return
+  SABR-only** responses (`serverAbrStreamingUrl`, no plain `url`) which we can't
+  download — so it produced no usable formats and was skipped.
+- Dead clients `TV_EMBEDDED` and `MEDIA_CONNECT` (removed upstream) were still tried.
+
+**Phase 1 fix (shipped, v2.0.121):** Realigned `INNERTUBE_CLIENTS` with yt-dlp —
+`ANDROID_VR` pinned to **`1.65.10`** as the **primary** client (no PO token, no
+player-JS, direct DASH/HTTPS up to 2160p), then the other no-token clients
+(`TV`, `WEB_EMBEDDED`), then authenticated `WEB_CREATOR`; the gvs-token-required
+clients (`IOS`, `WEB`, `MWEB`) demoted to last resort. Dead clients removed;
+versions refreshed to 2026-01. Verified: previously-failing videos extract
+first-try with the full quality ladder and pass the CDN probe.
+
+**Phase 2 (gvs PO-token minting) — investigated, then DEFERRED.** For
+age-restricted / token-gated videos the no-token clients don't suffice; the fix
+is a `gvs` PO token bound to `visitorData`. A working in-process minter
+(`contrib/po-token-provider.mjs`, BotGuard via **bgutils-js + jsdom**) was proven
+**under real Node.js** — it mints an ~848-char token that clears the IOS 403 and
+yields 2160p. **But it cannot ship in the CLI binary:** jsdom does not survive the
+esbuild → Node **SEA** bundle (its sync-XHR worker uses `require.resolve`; even
+after patching that line, minting still fails in the bundle), and a minimal DOM
+shim is rejected by BotGuard (`PMD:Undefined` — it fingerprints real-DOM props).
+
+**Path forward (when needed):** run the minter as an **external sidecar
+PO-token provider** under real Node (the architecture yt-dlp itself uses via
+`bgutil-ytdlp-pot-provider`) and have `videodl-cli` request a token over HTTP —
+not bundled into the SEA. Reference implementation kept at
+`contrib/po-token-provider.mjs` (needs `bgutils-js` + `jsdom`).
+
+**Key Lesson:** Keep the YouTube client table in sync with yt-dlp's
+`INNERTUBE_CLIENTS` (versions + gvs-PO-token policy) — that alone fixes most
+403s. Do **not** try to bundle jsdom into a Node SEA; PO-token minting belongs in
+a separate real-Node process.
+
+---
+
+**Last update:** 2026-07-05
