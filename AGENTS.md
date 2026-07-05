@@ -14,6 +14,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Read `README.md` for supported sites, CLI flags, packaging, and release workflow.
 - Read `LESSONS-LEARNED.md` before touching extractors, HTTP/TLS behavior, or packaging.
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
+- To re-sync YouTube handling from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `./update-from-ytdlp.sh {check|ship}` (as root on 11.1.0.2).
 
 ## Work Safely
 - Do not commit cookies, tokens, captcha keys, account credentials, or captured request headers.
