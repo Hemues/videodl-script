@@ -2,6 +2,26 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.121] - 2026-07-05
+
+### Fixed
+- **YouTube 403 (CDN media rejection) — InnerTube client table realigned with yt-dlp.**
+  Downloads intermittently failed with `HTTP 403 Forbidden` on `*.googlevideo.com`
+  media URLs. Root causes: (1) the `IOS` client now *requires* a `gvs` PO token
+  (its `c=IOS` media URLs 403 without one), yet it was near the front of the
+  rotation; (2) `ANDROID_VR` was pinned to `1.71.26`, but client versions `> 1.65`
+  return **SABR-only** responses (no plain `url`) which we cannot download, so it
+  yielded no usable formats and was skipped; (3) dead clients `TV_EMBEDDED` and
+  `MEDIA_CONNECT` (removed upstream) were still being tried.
+- **Fix:** `ANDROID_VR` is now the **primary** client, pinned to `1.65.10`
+  (no PO token, no player-JS, direct DASH/HTTPS URLs up to 2160p), followed by the
+  other no-token clients (`TV`, `WEB_EMBEDDED`) and the authenticated `WEB_CREATOR`.
+  The `gvs`-PO-token-required clients (`IOS`, `WEB`, `MWEB`) are demoted to last
+  resort. Dead clients removed; remaining client versions refreshed to 2026-01.
+  Verified: previously-failing videos now extract first-try with the full quality
+  ladder and pass the CDN probe. (gvs PO-token *minting* — for age-restricted /
+  token-gated content — is tracked separately.)
+
 ## [2.0.112] - 2026-05-10
 
 ### Added

@@ -49,18 +49,74 @@ const DOWNLOAD_HEADERS = {
 // Default InnerTube API key (used when no per-client key is specified)
 const INNERTUBE_API_KEY = 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w';
 
-// InnerTube client configurations (from yt-dlp)
-// Order: authenticated clients first (SAPISIDHASH), then clients that don't
-// need PO tokens, then PO-token-required clients as last resort.
+// InnerTube client configurations — aligned with yt-dlp's client table (2026).
+//
+// Ordered by reliability for UNAUTHENTICATED downloads:
+//   1) clients whose googlevideo media URLs need NO gvs PO token
+//      (ANDROID_VR, TV, WEB_EMBEDDED) — tried first,
+//   2) authenticated (cookies) client (WEB_CREATOR),
+//   3) clients whose media URLs now REQUIRE a gvs PO token (IOS, WEB, MWEB) —
+//      last resort: without a minted token their CDN fetch returns HTTP 403.
+//
+// NOTE (Phase 2 / future): gvs PO-token *minting* is not implemented. yt-dlp
+// offloads it to an external provider (bgutil / bgutils-js + jsdom). Until we
+// vendor that, the token-required clients below only succeed opportunistically
+// (e.g. cached/experiment-exempt sessions); ANDROID_VR is the primary path.
+//
+// Removed vs. older revisions: TV_EMBEDDED (TVHTML5_SIMPLY_EMBEDDED_PLAYER) and
+// MEDIA_CONNECT no longer exist in yt-dlp's client table.
 const INNERTUBE_CLIENTS = [
-  // --- Authenticated clients (SAPISIDHASH + onBehalfOfUser) ---
-  // When auth works, these give full-resolution streams without PO tokens.
+  // --- No gvs PO token required: direct URLs, JS-player not needed ---
+  // PRIMARY. ANDROID_VR must stay pinned <= 1.65.x: newer client versions
+  // return SABR-only responses (serverAbrStreamingUrl, no plain `url`) which
+  // we cannot download, so they get skipped and we lose the best path.
+  {
+    name: 'ANDROID_VR',
+    clientNameId: 28,
+    client: {
+      clientName: 'ANDROID_VR',
+      clientVersion: '1.65.10',
+      deviceMake: 'Oculus',
+      deviceModel: 'Quest 3',
+      androidSdkVersion: 32,
+      userAgent: 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+      osName: 'Android',
+      osVersion: '12L',
+      hl: 'en',
+    },
+    requiresJs: false,
+  },
+  {
+    name: 'TV',
+    clientNameId: 7,
+    client: {
+      clientName: 'TVHTML5',
+      clientVersion: '7.20260114.12.00',
+      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+      hl: 'en',
+    },
+    requiresJs: true,
+    useSts: true,
+  },
+  {
+    name: 'WEB_EMBEDDED',
+    clientNameId: 56,
+    client: {
+      clientName: 'WEB_EMBEDDED_PLAYER',
+      clientVersion: '1.20260115.01.00',
+      hl: 'en',
+    },
+    thirdParty: { embedUrl: 'https://www.youtube.com/' },
+    requiresJs: true,
+    useSts: true,
+  },
+  // --- Authenticated (SAPISIDHASH + cookies): full-resolution when signed in ---
   {
     name: 'WEB_CREATOR',
     clientNameId: 62,
     client: {
       clientName: 'WEB_CREATOR',
-      clientVersion: '1.20260228.01.00',
+      clientVersion: '1.20260114.05.00',
       hl: 'en',
       timeZone: 'UTC',
       utcOffsetMinutes: 0,
@@ -69,64 +125,31 @@ const INNERTUBE_CLIENTS = [
     requiresJs: true,
     useSts: true,
   },
-  {
-    name: 'TV',
-    clientNameId: 7,
-    client: {
-      clientName: 'TVHTML5',
-      clientVersion: '7.20260228.01.00',
-      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
-      hl: 'en',
-    },
-    requiresJs: true,
-    useSts: true,
-  },
-  // --- Clients that reportedly don't need PO tokens ---
-  {
-    name: 'TV_EMBEDDED',
-    clientNameId: 85,
-    client: {
-      clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
-      clientVersion: '2.0',
-      hl: 'en',
-    },
-    thirdParty: { embedUrl: 'https://www.youtube.com/' },
-    requiresJs: true,
-    useSts: true,
-  },
-  {
-    name: 'MEDIA_CONNECT',
-    clientNameId: 95,
-    client: {
-      clientName: 'MEDIA_CONNECT_FRONTEND',
-      clientVersion: '0.1',
-      hl: 'en',
-    },
-    requiresJs: false,
-  },
-  // --- IOS client: gives direct URLs, may work for some content ---
+  // --- gvs PO token REQUIRED (last resort until minting is implemented) ---
+  // IOS: /player extraction succeeds but its `c=IOS` googlevideo media URLs
+  // now 403 at the CDN without a gvs (or player) PO token. Kept last because
+  // its HLS manifest path (see extract()) still works for some content.
   {
     name: 'IOS',
     clientNameId: 5,
     client: {
       clientName: 'IOS',
-      clientVersion: '20.03.02',
+      clientVersion: '21.02.3',
       deviceMake: 'Apple',
       deviceModel: 'iPhone16,2',
-      userAgent: 'com.google.ios.youtube/20.03.02 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
+      userAgent: 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
       osName: 'iPhone',
       osVersion: '18.3.1.22D72',
       hl: 'en',
     },
     requiresJs: false,
   },
-  // --- PO token usually required for full content ---
   {
     name: 'WEB',
     clientNameId: 1,
     client: {
       clientName: 'WEB',
-      clientVersion: '2.20260228.01.00',
+      clientVersion: '2.20260114.08.00',
       hl: 'en',
       timeZone: 'UTC',
       utcOffsetMinutes: 0,
@@ -139,38 +162,10 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 2,
     client: {
       clientName: 'MWEB',
-      clientVersion: '2.20260228.01.00',
+      clientVersion: '2.20260115.01.00',
       hl: 'en',
       userAgent: 'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)',
     },
-    requiresJs: true,
-    useSts: true,
-  },
-  {
-    name: 'ANDROID_VR',
-    clientNameId: 28,
-    client: {
-      clientName: 'ANDROID_VR',
-      clientVersion: '1.71.26',
-      deviceMake: 'Oculus',
-      deviceModel: 'Quest 3',
-      androidSdkVersion: 32,
-      userAgent: 'com.google.android.apps.youtube.vr.oculus/1.71.26 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
-      osName: 'Android',
-      osVersion: '12L',
-      hl: 'en',
-    },
-    requiresJs: false,
-  },
-  {
-    name: 'WEB_EMBEDDED',
-    clientNameId: 56,
-    client: {
-      clientName: 'WEB_EMBEDDED_PLAYER',
-      clientVersion: '1.20260228.01.00',
-      hl: 'en',
-    },
-    thirdParty: { embedUrl: 'https://www.youtube.com/' },
     requiresJs: true,
     useSts: true,
   },
