@@ -156,7 +156,7 @@ export function listExtractors() {
     'YouPorn':           'youporn.com',
     'RedTube':           'redtube.com',
     'Tube8':             'tube8.com',
-    'KVS':               'KVS-powered sites (blowjobs.pro, ...)',
+    'KVS':               'KVS-powered sites (blowjobs.pro, tgtsporn.com, hentaigem.com)',
     'Indavideo':         'indavideo.hu',
     'Videa':             'videa.hu, videakid.hu',
     'Vimeo':             'vimeo.com',

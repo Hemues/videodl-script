@@ -44,7 +44,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **UncensoredHentai** — full support
 - ✅ **HentaiHaven** — hentaihaven.xxx (player-logic plugin → HLS; requires `curl`)
 - ✅ **Brazzers** — cookie-authenticated
-- ✅ **KVS** — generic KVS engine (blowjobs.pro, tgtsporn.com, …)
+- ✅ **KVS** — generic KVS engine (blowjobs.pro, tgtsporn.com, hentaigem.com, …)
 - ✅ **NoodleMagazine** — noodlemagazine.com
 - ✅ **AShemaleTube** — ashemaletube.com (HLS, CycleTLS)
 - ✅ **Erome** — erome.com (album pages, direct MP4)

@@ -62,7 +62,7 @@ A powerful CLI video downloader and converter with **43 built-in site extractors
 | HentaiHaven | hentaihaven.xxx | player-logic plugin → HLS; needs `curl` (Cloudflare managed challenge blocks Node/cycletls TLS) |
 | AShemaleTube | ashemaletube.com | HLS streaming, CycleTLS |
 | Brazzers | brazzers.com | Requires cookies |
-| KVS | KVS-powered sites | Generic KVS engine extractor |
+| KVS | KVS-powered sites (blowjobs.pro, tgtsporn.com, hentaigem.com) | Generic KVS engine (flashvars + license-code unscrambling) |
 | **yt-dlp** | **1000+ additional sites** | **Fallback — requires `yt-dlp` installed** |
 | Direct URLs | any `.mp4`, `.mkv`, `.webm`, `.m3u8` | Fallback extractor |
 

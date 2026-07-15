@@ -34,6 +34,7 @@ const HEADERS = {
 const KVS_DOMAINS = [
   /blowjobs\.pro/i,
   /tgtsporn\.com/i,
+  /hentaigem\.com/i,
 ];
 
 export class KVSExtractor extends BaseExtractor {

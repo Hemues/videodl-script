@@ -16,6 +16,11 @@ All notable changes to videodl-cli will be documented in this file.
     rejected outright, but system `curl` passes — so the extractor makes its
     requests through a `curl` subprocess (present in the container, on Windows
     10+, macOS, and Linux, alongside the existing ffmpeg/yt-dlp deps).
+- **hentaigem.com support (via the generic KVS engine).** Added `hentaigem.com`
+  to the KVS extractor's domain list — the site is standard Kernel Video Sharing
+  (`kt_player` + `flashvars` + `license_code`) with no Cloudflare challenge, so
+  the existing engine handles it (flashvars parse → license-code unscramble →
+  `get_file` URL). Verified end-to-end (extract + download real H.264/AAC video).
 - **`update-from-ytdlp.sh` + `UPDATE-FROM-YTDLP.md`** — repeatable process to
   re-sync the YouTube client table from yt-dlp and ship it end-to-end (rebuild
   CLI → publish → embed in videodl-container → deploy → verify). `check` mode
