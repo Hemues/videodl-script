@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-42 built-in extractors + yt-dlp fallback:
+43 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -42,6 +42,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **Eporner** — eporner.com
 - ✅ **SpankBang** — spankbang.com (CycleTLS)
 - ✅ **UncensoredHentai** — full support
+- ✅ **HentaiHaven** — hentaihaven.xxx (player-logic plugin → HLS; requires `curl`)
 - ✅ **Brazzers** — cookie-authenticated
 - ✅ **KVS** — generic KVS engine (blowjobs.pro, tgtsporn.com, …)
 - ✅ **NoodleMagazine** — noodlemagazine.com
@@ -67,7 +68,7 @@ When no native extractor matches a URL, videodl-cli automatically delegates to `
 - Many more (see `yt-dlp --list-extractors` for the full list)
 
 **How it works:**
-1. videodl-cli tries all 41 native extractors first (fast, no external dependency)
+1. videodl-cli tries all 43 native extractors first (fast, no external dependency)
 2. If none match, it invokes `yt-dlp --dump-json` to extract metadata
 3. The format list and URLs from yt-dlp are normalized into videodl-cli's internal format
 4. The existing downloader handles the actual download using the URLs provided by yt-dlp

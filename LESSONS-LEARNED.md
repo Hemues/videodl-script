@@ -23,6 +23,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 12. [Chapter Embedding via ffmetadata](#12--chapter-embedding-via-ffmetadata)
 13. [ffmpeg -map 0 Required When Remuxing Multi-Stream Files](#13--ffmpeg--map-0-required-when-remuxing-multi-stream-files)
 14. [YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)](#14--youtube-403--client-table--gvs-po-tokens-phase-2-deferred)
+15. [HentaiHaven — Cloudflare managed challenge (curl only) & obfuscated HLS segments](#15--hentaihaven--cloudflare-managed-challenge-curl-only--obfuscated-hls-segments)
 
 ---
 
@@ -389,4 +390,51 @@ a separate real-Node process.
 
 ---
 
-**Last update:** 2026-07-05
+## #15 — HentaiHaven — Cloudflare managed challenge (curl only) & obfuscated HLS segments
+
+✅ Verified 2026-07-16 (full 720p episode downloaded to a valid MP4).
+
+**Site flow (`hentaihaven.xxx`, WordPress "player-logic" plugin by zarat.dev):**
+1. Watch page → `<iframe src=".../wp-content/plugins/player-logic/player.php?data=…">`.
+2. `player.php` → `<meta name="x-secure-token" content="sha512-<blob>">`.
+   Decode exactly as `player.js` does: strip `sha512-`, then **3×** `( ROT13 → base64-decode )`,
+   then `JSON.parse`. Yields `{ en, iv, uri, image, host, subtitle_config, … }`.
+3. POST `<uri>api.php` with `action=zarat_get_data_player_ajax&a=<en>&b=<iv>` →
+   `{ status:true, data:{ sources:[{ src:"<master.m3u8>", type, label }] } }`.
+4. `sources[].src` is an HLS master → parse variants for per-quality formats.
+
+**Cloudflare fingerprints the TLS client, not the IP.** The same host that
+served the watch page fine to system `curl` (200) answered **Node** `fetch`/got
+with a `403 "Just a moment…"` managed challenge, and **cycletls**' utls could not
+even complete the handshake (`status 495`, "tls: protocol version not supported").
+Three TLS stacks, three outcomes. Lesson: on a CF *managed challenge* zone,
+JA3-only impersonation (cycletls) may fail at the TLS layer entirely — verify per
+site; don't assume cycletls is the universal bypass (contrast lesson #2). The
+extractor therefore fetches through a **`curl` subprocess** (curl is in the
+container image, on Windows 10+, macOS, and Linux). Puppeteer was not an option:
+the runtime container ships no Chrome/Chromium.
+
+**Obfuscated HLS segment extensions break ffmpeg 7.1+.** Variant playlists name
+their TS/fMP4 fragments `.html`/`.txt` (`index.txt`, `b_000.html`, `haN.html`,
+init `i.mp4`). ffmpeg 7.1+ added `extension_picky` (default on) which rejects
+segments whose detected container doesn't match the URL extension
+(`… extension … mismatches allowed extensions in url …ha1.html` → mux aborts).
+Fix in the shared HLS path (`downloader.js`): always pass `-allowed_extensions ALL`
+(universally supported) and, only when the ffmpeg build advertises it,
+`-extension_picky 0` (probed once via `-h full`, cached — older builds are
+unaffected and would otherwise abort on the unknown option).
+
+**Segment CDN is per-title and can be down.** The master/variant host
+(`master-lengs.org`) and the segment host differ, and the segment host varies by
+title (`hentaiihaven.com`, `anpustream.com`, `eng-cariz.top`, …). Some are
+Cloudflare-fronted and can return **523 (origin unreachable)** for a title while
+others serve `200` — a site/CDN condition, not an extractor bug. When only the
+segments 523 but extraction succeeds, it's the CDN, not the code.
+
+**Key Lesson:** Match the fetch client to what the target's CF zone actually
+accepts (here: `curl`), and keep ffmpeg's HLS demuxer permissive about segment
+file extensions.
+
+---
+
+**Last update:** 2026-07-16

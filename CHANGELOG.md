@@ -5,10 +5,30 @@ All notable changes to videodl-cli will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **HentaiHaven extractor (`hentaihaven.xxx`).** New native extractor for the
+  site's WordPress "player-logic" plugin: watch page → `player.php` iframe →
+  `x-secure-token` meta (decoded with ROT13 + base64 ×3) → POST `api.php`
+  (`zarat_get_data_player_ajax`) → HLS master playlist, parsed into per-quality
+  variants (480p/720p/1080p). Verified end-to-end (full 720p episode → valid MP4).
+  - The site fronts `/watch/` and the player endpoints with a Cloudflare
+    **managed challenge** that fingerprints the TLS client: Node's TLS
+    (got/fetch) gets a `403 "Just a moment…"` and cycletls' utls handshake is
+    rejected outright, but system `curl` passes — so the extractor makes its
+    requests through a `curl` subprocess (present in the container, on Windows
+    10+, macOS, and Linux, alongside the existing ffmpeg/yt-dlp deps).
 - **`update-from-ytdlp.sh` + `UPDATE-FROM-YTDLP.md`** — repeatable process to
   re-sync the YouTube client table from yt-dlp and ship it end-to-end (rebuild
   CLI → publish → embed in videodl-container → deploy → verify). `check` mode
   diffs yt-dlp's live `INNERTUBE_CLIENTS` against ours; `ship` runs the pipeline.
+
+### Fixed
+- **HLS: accept segments with obfuscated file extensions.** The shared HLS
+  downloader now passes `-allowed_extensions ALL` to ffmpeg (universally
+  supported) and, when the ffmpeg build supports it (7.1+), `-extension_picky 0`.
+  Sites such as HentaiHaven name their TS/fMP4 fragments `.html`/`.txt`, which
+  ffmpeg 7.1+ otherwise rejects (`… extension … mismatches allowed extensions`),
+  aborting the mux. Support for `-extension_picky` is probed once and cached, so
+  older ffmpeg builds are unaffected.
 
 ### Docs
 - Rewrote `YOUTUBE-LIMITATIONS.md` to reflect current reality (downloads work to

@@ -1,10 +1,10 @@
 # videodl-cli
 
-A powerful CLI video downloader and converter with **35 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
+A powerful CLI video downloader and converter with **43 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
 
 ## Features
 
-- **35 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
+- **43 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
 - **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
 - **Playlist & channel support** — YouTube playlists and channels are auto-detected; videos are downloaded into a subdirectory named after the playlist/channel
 - **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
@@ -59,6 +59,7 @@ A powerful CLI video downloader and converter with **35 built-in site extractors
 | PornOne | pornone.com | Full support |
 | PornZog | pornzog.com | HClips embeds |
 | UncensoredHentai | uncensoredhentai.xxx | Full support |
+| HentaiHaven | hentaihaven.xxx | player-logic plugin → HLS; needs `curl` (Cloudflare managed challenge blocks Node/cycletls TLS) |
 | AShemaleTube | ashemaletube.com | HLS streaming, CycleTLS |
 | Brazzers | brazzers.com | Requires cookies |
 | KVS | KVS-powered sites | Generic KVS engine extractor |
@@ -542,7 +543,7 @@ videodl-cli/
 │   ├── ffmpeg-helper.js       # Auto-download ffmpeg if missing
 │   ├── help.js                # CLI help text
 │   ├── extractors/
-│   │   ├── index.js           # Extractor registry (35 sites)
+│   │   ├── index.js           # Extractor registry (43 sites)
 │   │   ├── base.js            # BaseExtractor class
 │   │   ├── youtube.js         # YouTube extractor
 │   │   ├── xhamster.js        # xHamster extractor

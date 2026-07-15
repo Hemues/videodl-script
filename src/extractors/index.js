@@ -19,6 +19,7 @@ import { VimeoExtractor } from './vimeo.js';
 import { FacebookExtractor } from './facebook.js';
 import { MotherlessExtractor } from './motherless.js';
 import { UncensoredHentaiExtractor } from './uncensoredhentai.js';
+import { HentaiHavenExtractor } from './hentaihaven.js';
 import { InPornExtractor } from './inporn.js';
 import { TnaFluxExtractor } from './tnaflux.js';
 import { TubeSafariExtractor } from './tubesafari.js';
@@ -65,6 +66,7 @@ const EXTRACTORS = [
   FacebookExtractor,
   MotherlessExtractor,
   UncensoredHentaiExtractor,
+  HentaiHavenExtractor,
   InPornExtractor,
   TnaFluxExtractor,
   TubeSafariExtractor,
@@ -161,6 +163,7 @@ export function listExtractors() {
     'Facebook':          'facebook.com, fb.watch',
     'Motherless':        'motherless.com',
     'UncensoredHentai':  'uncensoredhentai.xxx',
+    'HentaiHaven':       'hentaihaven.xxx (player-logic / HLS; needs curl)',
     'InPorn':            'inporn.com',
     'TnaFlux':           'tnaflix.com, empflix.com',
     'TubeSafari':        'tubesafari.com (XHamster embeds)',

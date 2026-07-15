@@ -3,12 +3,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { EventEmitter } from 'node:events';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 
 const NAME_PATTERN = /\/([^/]+?)(?:\.([a-z0-9]{1,5}))?(?:\?|#|$)/i;
+
+/**
+ * ffmpeg 7.1+ added an `extension_picky` AVFormat option (enabled by default)
+ * that refuses HLS segments whose detected container doesn't match the URL's
+ * file extension.  Sites that name their fMP4/TS segments `.html`, `.txt`, `.jpg`
+ * etc. (obfuscation) trip this check.  Passing `-extension_picky 0` disables it,
+ * but the option does not exist on older ffmpeg builds and would abort them, so
+ * probe support once per process and cache the result.
+ */
+let _ffmpegPickyProbe = null;
+function ffmpegSupportsExtensionPicky(ffmpegPath) {
+  if (_ffmpegPickyProbe !== null) return _ffmpegPickyProbe;
+  try {
+    const out = execFileSync(ffmpegPath, ['-hide_banner', '-h', 'full'], {
+      encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    _ffmpegPickyProbe = /extension_picky/.test(out);
+  } catch {
+    _ffmpegPickyProbe = false;
+  }
+  return _ffmpegPickyProbe;
+}
 
 /**
  * Return a filepath that doesn't collide with existing files.
@@ -1349,6 +1371,16 @@ export class VideoDownloader extends EventEmitter {
       // file,crypto,data by default. Always whitelist the full set so
       // remote segments / init sections (https) can be fetched.
       args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto,data');
+
+      // Accept HLS segments regardless of their file extension. Many sites
+      // obfuscate segment names (.html/.txt/.jpg for TS/fMP4 fragments), which
+      // ffmpeg otherwise rejects. `-allowed_extensions ALL` is universally
+      // supported; `-extension_picky 0` (ffmpeg 7.1+) disables the newer
+      // container/extension-mismatch check and is only added when supported.
+      args.push('-allowed_extensions', 'ALL');
+      if (ffmpegSupportsExtensionPicky(ffmpegPath)) {
+        args.push('-extension_picky', '0');
+      }
 
       // HLS pair: two or more separate inputs (video + audio variant playlists)
       if (options.hlsAudioUrls && options.hlsAudioUrls.length > 0) {
