@@ -4,6 +4,14 @@ All notable changes to videodl-cli will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Synced the InnerTube client table with yt-dlp (2026-07-19).** Refreshed
+  `clientVersion`s: `TVHTML5` → 7.20260707.07.00, `WEB_EMBEDDED_PLAYER` →
+  2.20260708.00.00, `WEB_CREATOR` → 1.20260708.06.00, `IOS` → 21.26.4
+  (+ osVersion/userAgent), `WEB` → 2.20260708.00.00, `MWEB` → 2.20260708.05.00.
+  `ANDROID_VR` stays pinned at 1.65.10 (>1.65 returns SABR-only). Done via
+  `update-from-ytdlp.sh check`.
+
 ### Added
 - **HentaiHaven extractor (`hentaihaven.xxx`).** New native extractor for the
   site's WordPress "player-logic" plugin: watch page → `player.php` iframe →

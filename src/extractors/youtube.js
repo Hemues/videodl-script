@@ -49,7 +49,7 @@ const DOWNLOAD_HEADERS = {
 // Default InnerTube API key (used when no per-client key is specified)
 const INNERTUBE_API_KEY = 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w';
 
-// InnerTube client configurations — aligned with yt-dlp's client table (2026).
+// InnerTube client configurations — aligned with yt-dlp's client table (synced 2026-07-19).
 //
 // Ordered by reliability for UNAUTHENTICATED downloads:
 //   1) clients whose googlevideo media URLs need NO gvs PO token
@@ -91,7 +91,7 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 7,
     client: {
       clientName: 'TVHTML5',
-      clientVersion: '7.20260114.12.00',
+      clientVersion: '7.20260707.07.00',
       userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
       hl: 'en',
     },
@@ -103,7 +103,7 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 56,
     client: {
       clientName: 'WEB_EMBEDDED_PLAYER',
-      clientVersion: '1.20260115.01.00',
+      clientVersion: '2.20260708.00.00',
       hl: 'en',
     },
     thirdParty: { embedUrl: 'https://www.youtube.com/' },
@@ -116,7 +116,7 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 62,
     client: {
       clientName: 'WEB_CREATOR',
-      clientVersion: '1.20260114.05.00',
+      clientVersion: '1.20260708.06.00',
       hl: 'en',
       timeZone: 'UTC',
       utcOffsetMinutes: 0,
@@ -134,12 +134,12 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 5,
     client: {
       clientName: 'IOS',
-      clientVersion: '21.02.3',
+      clientVersion: '21.26.4',
       deviceMake: 'Apple',
       deviceModel: 'iPhone16,2',
-      userAgent: 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X;)',
+      userAgent: 'com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',
       osName: 'iPhone',
-      osVersion: '18.3.1.22D72',
+      osVersion: '18.3.2.22D82',
       hl: 'en',
     },
     requiresJs: false,
@@ -149,7 +149,7 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 1,
     client: {
       clientName: 'WEB',
-      clientVersion: '2.20260114.08.00',
+      clientVersion: '2.20260708.00.00',
       hl: 'en',
       timeZone: 'UTC',
       utcOffsetMinutes: 0,
@@ -162,7 +162,7 @@ const INNERTUBE_CLIENTS = [
     clientNameId: 2,
     client: {
       clientName: 'MWEB',
-      clientVersion: '2.20260115.01.00',
+      clientVersion: '2.20260708.05.00',
       hl: 'en',
       userAgent: 'Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)',
     },
