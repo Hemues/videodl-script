@@ -1,10 +1,10 @@
 # videodl-cli
 
-A powerful CLI video downloader and converter with **43 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
+A powerful CLI video downloader and converter with **45 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
 
 ## Features
 
-- **43 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
+- **45 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
 - **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
 - **Playlist & channel support** — YouTube playlists and channels are auto-detected; videos are downloaded into a subdirectory named after the playlist/channel
 - **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
@@ -543,7 +543,7 @@ videodl-cli/
 │   ├── ffmpeg-helper.js       # Auto-download ffmpeg if missing
 │   ├── help.js                # CLI help text
 │   ├── extractors/
-│   │   ├── index.js           # Extractor registry (43 sites)
+│   │   ├── index.js           # Extractor registry (45 sites)
 │   │   ├── base.js            # BaseExtractor class
 │   │   ├── youtube.js         # YouTube extractor
 │   │   ├── xhamster.js        # xHamster extractor

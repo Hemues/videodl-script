@@ -45,6 +45,8 @@ import { AShemaleTubeExtractor } from './ashemaletube.js';
 import { EromeExtractor } from './erome.js';
 import { BingatoExtractor } from './bingato.js';
 import { Mat6tubeExtractor } from './mat6tube.js';
+import { VtbeExtractor } from './vtbe.js';
+import { JustSwallowsExtractor } from './justswallows.js';
 import { SkoolExtractor } from './skool.js';
 import { StreamImdbExtractor } from './streamimdb.js';
 import { YtdlpExtractor } from './ytdlp.js';
@@ -92,6 +94,8 @@ const EXTRACTORS = [
   EromeExtractor,
   BingatoExtractor,
   Mat6tubeExtractor,
+  JustSwallowsExtractor,
+  VtbeExtractor,
   SkoolExtractor,
   StreamImdbExtractor,
   YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
@@ -187,6 +191,8 @@ export function listExtractors() {
     'NoodleMagazine':    'noodlemagazine.com',
     'AShemaleTube':      'ashemaletube.com',
     'Mat6tube':          'mat6tube.com (JWPlayer, pvvstream CDN)',
+    'JustSwallows':      'justswallows.live (WordPress/RetroTube → vtbe.to embed)',
+    'Vtbe':              'vtbe.to (JWPlayer HLS host; embedded by many tube sites)',
     'Skool':             'skool.com classroom lessons (often YouTube attachments)',
     'yt-dlp':            'yt-dlp fallback (1000+ sites — requires yt-dlp installed)',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',

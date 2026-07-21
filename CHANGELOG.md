@@ -13,6 +13,18 @@ All notable changes to videodl-cli will be documented in this file.
   `update-from-ytdlp.sh check`.
 
 ### Added
+- **Vtbe extractor (`vtbe.to`) + JustSwallows extractor (`justswallows.live`).**
+  `justswallows.live` is a WordPress/RetroTube site that hosts no video itself —
+  each post embeds `vtbe.to` (exposed via the `itemprop="embedURL"` meta and the
+  player iframe's `data-lazy-src`). The new **JustSwallows** extractor reads the
+  clean `og:title`, locates the embed, and delegates to the new reusable **Vtbe**
+  host extractor. Vtbe parses the embed's plain JWPlayer `setup({sources:[…]})`
+  block → HLS `master.m3u8` on the `*.vtube.network` CDN → per-quality formats
+  (parsed from the `#EXT-X-STREAM-INF` variants; falls back to an "auto" HLS
+  format, and also handles direct `.mp4` sources). Because Vtbe is a standalone
+  host extractor, any other tube site embedding vtbe.to can reuse it. Verified
+  end-to-end: extract → correct 720p HLS variant → live VOD media playlist with
+  real `.ts` segments (extraction + manifest resolution confirmed locally).
 - **HentaiHaven extractor (`hentaihaven.xxx`).** New native extractor for the
   site's WordPress "player-logic" plugin: watch page → `player.php` iframe →
   `x-secure-token` meta (decoded with ROT13 + base64 ×3) → POST `api.php`
