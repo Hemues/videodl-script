@@ -7,6 +7,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
+import { detectDrm, DrmProtectedError } from './drm-detect.js';
 
 const NAME_PATTERN = /\/([^/]+?)(?:\.([a-z0-9]{1,5}))?(?:\?|#|$)/i;
 
@@ -78,7 +79,19 @@ export class VideoDownloader extends EventEmitter {
 
     // Check if this is an HLS stream
     const isHLS = options.url.includes('.m3u8') || options.protocol === 'hls';
-    
+    const isDASH = /\.mpd(\?|#|$)/i.test(options.url) || options.protocol === 'dash' || options.protocol === 'mpd';
+
+    // DRM pre-flight: for HLS/DASH manifests, detect DRM up front and stop with a
+    // clear message rather than letting ffmpeg fail cryptically on ciphertext.
+    // (Detection only — videodl never circumvents DRM.)
+    if ((isHLS || isDASH) && options.checkDrm !== false) {
+      await this._precheckManifestDrm(options.url, {
+        headers: options.formatHeaders || {},
+        cookies: options.cookies,
+        rejectUnauthorized: options.rejectUnauthorized,
+      });
+    }
+
     if (isHLS) {
       return await this.downloadHLS(options);
     }
@@ -1212,6 +1225,69 @@ export class VideoDownloader extends EventEmitter {
     }
 
     return results;
+  }
+
+  /**
+   * Fetch an HLS/DASH manifest and refuse (clearly) if it is DRM-protected.
+   * Detection only — no keys are requested and nothing is decrypted. Resilient:
+   * a manifest fetch that fails (auth/geoblock/network) does NOT block the
+   * download; the normal path then surfaces the real error.
+   * @throws {DrmProtectedError} when a DRM system is detected
+   */
+  async _precheckManifestDrm(url, opts = {}) {
+    const reqHeaders = { ...(opts.headers || {}) };
+    if (!reqHeaders['User-Agent'] && !reqHeaders['user-agent']) {
+      reqHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    }
+    if (opts.cookies && Array.isArray(opts.cookies)) {
+      const ch = buildCookieHeader(opts.cookies, url);
+      if (ch) reqHeaders['Cookie'] = ch;
+    }
+
+    const fetchText = async (u) => {
+      const resp = await got(u, {
+        headers: reqHeaders,
+        timeout: { request: 15000 },
+        followRedirect: true,
+        retry: { limit: 0 },
+        https: opts.rejectUnauthorized === false ? { rejectUnauthorized: false } : undefined,
+      });
+      return resp.body;
+    };
+
+    let body;
+    try {
+      body = await fetchText(url);
+    } catch (e) {
+      console.error(`[DRM] Manifest pre-check skipped (${e.message})`);
+      return;
+    }
+
+    let systems = detectDrm(body);
+
+    // HLS master playlist: DRM keys usually live in the variant playlists — so
+    // if the master looks clean, peek at the first variant before deciding.
+    if (!systems && /#EXT-X-STREAM-INF/i.test(body)) {
+      const lines = body.split('\n');
+      let variant = null;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^#EXT-X-STREAM-INF/i.test(lines[i].trim())) {
+          for (let j = i + 1; j < lines.length; j++) {
+            const n = lines[j].trim();
+            if (n && !n.startsWith('#')) { variant = n; break; }
+          }
+          break;
+        }
+      }
+      if (variant) {
+        try { systems = detectDrm(await fetchText(new URL(variant, url).href)); } catch { /* best effort */ }
+      }
+    }
+
+    if (systems) {
+      console.error(`[DRM] Detected: ${systems.join(', ')}`);
+      throw new DrmProtectedError(systems);
+    }
   }
 
   /**

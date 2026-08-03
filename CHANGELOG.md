@@ -13,6 +13,18 @@ All notable changes to videodl-cli will be documented in this file.
   `update-from-ytdlp.sh check`.
 
 ### Added
+- **DRM detection (`src/drm-detect.js`).** HLS/DASH manifests are scanned for
+  Widevine, PlayReady, FairPlay, generic CENC and DRM `SAMPLE-AES` before a
+  download starts; a DRM stream now stops with a clear `🔒 DRM-protected:
+  <systems>` message (CLI) / `{drm:true, drmSystems:[…]}` (download-json, for the
+  web UI) instead of a cryptic ffmpeg failure. **Detection only — videodl never
+  circumvents DRM** (no CDM, no keys, no decryption). Ordinary HLS **AES-128**
+  (standard, downloadable encryption) is deliberately *not* flagged. Wired into
+  `downloader.download()` as a manifest pre-flight (`_precheckManifestDrm`, which
+  also peeks at the first variant of an HLS master); resilient — a failed
+  manifest fetch does not block the normal path. Verified: 8/8 unit cases + the
+  Shaka/Axinom Widevine+PlayReady test vectors blocked, clear Mux/Apple streams
+  pass. See `LESSONS-LEARNED.md #16`.
 - **Vtbe extractor (`vtbe.to`) + JustSwallows extractor (`justswallows.live`).**
   `justswallows.live` is a WordPress/RetroTube site that hosts no video itself —
   each post embeds `vtbe.to` (exposed via the `itemprop="embedURL"` meta and the

@@ -24,6 +24,7 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 13. [ffmpeg -map 0 Required When Remuxing Multi-Stream Files](#13--ffmpeg--map-0-required-when-remuxing-multi-stream-files)
 14. [YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)](#14--youtube-403--client-table--gvs-po-tokens-phase-2-deferred)
 15. [HentaiHaven — Cloudflare managed challenge (curl only) & obfuscated HLS segments](#15--hentaihaven--cloudflare-managed-challenge-curl-only--obfuscated-hls-segments)
+16. [DRM detection — refuse cleanly, never circumvent; don't flag plain AES-128](#16--drm-detection--refuse-cleanly-never-circumvent-dont-flag-plain-aes-128)
 
 ---
 
@@ -437,4 +438,40 @@ file extensions.
 
 ---
 
-**Last update:** 2026-07-16
+## #16 — DRM detection — refuse cleanly, never circumvent; don't flag plain AES-128
+
+✅ Verified 2026-08-03 (unit + real Widevine/PlayReady test vectors + clear streams).
+
+videodl **detects** DRM and stops with a clear message; it does **not** and will
+not circumvent it (no CDM, no keys, no decryption). `src/drm-detect.js`
+(`detectDrm()` + `DrmProtectedError`) scans an HLS/DASH manifest for:
+- **DASH**: `<ContentProtection>` system UUIDs (Widevine `edef8ba9-…`, PlayReady
+  `9a04f079-…`, FairPlay `94ce86fb-…`), `<cenc:pssh>`, and the generic
+  `urn:mpeg:dash:mp4protection:2011` CENC marker.
+- **HLS**: `#EXT-X-KEY` / `#EXT-X-SESSION-KEY` with a DRM `KEYFORMAT`
+  (`com.apple.streamingkeydelivery` = FairPlay, the Widevine/PlayReady UUIDs) or
+  `METHOD=SAMPLE-AES` with a non-`identity` keyformat.
+
+**The trap: do not flag ordinary HLS AES-128.** `METHOD=AES-128` with
+`KEYFORMAT="identity"` (or none) and an HTTP(S) key URI is *standard, downloadable*
+HLS encryption that videodl handles via ffmpeg — flagging it would break working
+downloads. Only `SAMPLE-AES` / a DRM key system / CENC counts. (Unit-tested both
+ways: plain AES-128 and identity keyformat must return `clear`.)
+
+Wired into `downloader.download()` as a pre-flight (`_precheckManifestDrm`) that
+fetches the manifest (and, for an HLS master, the first variant) before download.
+It is **resilient**: a manifest fetch that fails (auth/geoblock/network) does NOT
+block — the normal path still surfaces the real error, so a transient fetch
+failure never masquerades as "DRM". CLI prints `🔒 DRM-protected: <systems>`;
+`download-json` emits `{drm:true, drmSystems:[…]}` for the container web UI.
+
+**Context:** commercial services (HBO Max/Max, Netflix, Disney+) use
+Widevine/PlayReady/FairPlay — no cookie/login makes them downloadable; the
+segments are ciphertext and circumventing the CDM is illegal (DMCA §1201 / EU
+Copyright Directive Art. 6). This feature exists to *report* that honestly, not
+to defeat it. (yt-dlp already errors "This video is DRM protected" on the
+fallback path; this adds the same clarity to the native download path.)
+
+---
+
+**Last update:** 2026-08-03

@@ -10,6 +10,7 @@ A powerful CLI video downloader and converter with **45 built-in site extractors
 - **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
 - **DASH merging** — automatically merges separate video + audio streams via ffmpeg
 - **HLS streaming** — downloads M3U8 / HLS streams with ffmpeg
+- **DRM detection** — HLS/DASH streams protected by Widevine/PlayReady/FairPlay/CENC are detected up front and refused with a clear message (detection only — videodl never circumvents DRM; ordinary AES-128 HLS is unaffected)
 - **Subtitle support** — downloads, embeds, and auto-translates subtitles (YouTube)
 - **Chapter embedding** — YouTube chapter markers from the video description are automatically embedded as metadata (works in VLC, mpv, MPC-HC, etc.)
 - **Cookie authentication** — Netscape cookie files (same format as yt-dlp / curl)

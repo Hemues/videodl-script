@@ -838,7 +838,13 @@ program
         }
       }
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      if (error.isDrm) {
+        console.error(chalk.yellow(`\n🔒 DRM-protected: ${error.drmSystems.join(', ')}`));
+        console.error(chalk.gray('   The video is encrypted and requires a licensed CDM to decrypt.'));
+        console.error(chalk.gray('   videodl does not download DRM streams — use the service\'s own offline downloads.'));
+      } else {
+        console.error(chalk.red(`Error: ${error.message}`));
+      }
       process.exit(1);
     }
   });
@@ -1325,7 +1331,9 @@ program
         // jsonLine with status=ok was already set — don't overwrite with error
         process.exit(0);
       }
-      jsonLine({ status: 'error', msg: error.message });
+      jsonLine(error.isDrm
+        ? { status: 'error', msg: error.message, drm: true, drmSystems: error.drmSystems }
+        : { status: 'error', msg: error.message });
       process.exit(1);
     }
   });
