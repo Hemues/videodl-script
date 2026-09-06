@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-45 built-in extractors + yt-dlp fallback:
+47 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -32,6 +32,8 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **Bitchute** — bitchute.com
 - ✅ **Imgur** — imgur.com (video/gifv)
 - ✅ **Indavideo** — indavideo.hu
+- ✅ **IndaPlay** — indaplay.hu, cms.indaplay.hu (Indamedia's **PeerTube** platform; watch pages, embeds, and `/csatornak/<channel>` as a playlist)
+- ✅ **IndaEvents** — indaevents.hu event pages (`/e/<event>`; finds the IndaPlay or YouTube embed and delegates)
 - ✅ **Videa** — videa.hu, videakid.hu
 - ✅ **Motherless** — full support
 - ✅ **InPorn** — full support

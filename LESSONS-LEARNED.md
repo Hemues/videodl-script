@@ -474,4 +474,49 @@ fallback path; this adds the same clarity to the native download path.)
 
 ---
 
-**Last update:** 2026-08-03
+## #17 — IndaPlay/IndaEvents — find the *host*, and never trust a 200 or a page's first video
+
+✅ Verified 2026-09-06 (8 live URL shapes + an end-to-end download, byte-exact).
+
+**Fingerprint the host before writing anything.** The ask was "download videos
+from the IndaEvents app". indaevents.hu hosts no video at all — event pages at
+`/e/<event>` embed `indaplay.hu`, and IndaPlay turned out to be a **PeerTube
+instance** (`cms.indaplay.hu`) behind a Next.js portal. That single discovery
+replaced all player reverse-engineering with a documented public API
+(`/api/v1/videos/<uuid>`, `/api/v1/video-channels/<name>/videos`,
+`/api/v1/search/videos`) giving per-resolution progressive fMP4 **and** HLS, plus
+title/duration/uploader/thumbnail. Same recipe as JustSwallows→Vtbe (#9 pattern):
+identify the CMS first, then write the smallest adapter.
+
+Four traps, each of which would have shipped a silently-wrong extractor:
+
+1. **A 200 is not a success.** `indaplay.hu/<channel>/<slug>` answers **HTTP 200**
+   but renders the Next.js `notfound` route segment — a soft 404 with no payload.
+   The real watch route is `/hu/video/<channel>/<slug>`. Route shapes were only
+   discoverable from rendered `<a href>`s, not from the URL guesses that "worked".
+2. **A page carries many videos; the wanted one is not first.** A watch page holds
+   31 video objects and the home page 514. Taking the first `contentPlaylistUrl`
+   returns *someone else's video* — the target was 4th in document order. The slug
+   is matched exactly, and slug↔uuid resolution has three fallbacks (page payload
+   → channel listing → instance search) because…
+3. **…`/embed/<channel>/<id>` returns HTTP 500 for videos that are perfectly
+   fine.** The AI Summit 2025 aftermovie 500s on embed while its PeerTube record
+   and streams are intact, so an embed failure must never be fatal. Portal slugs
+   are the video name accent-folded and hyphenated (`"AI Summit 2025 Aftermovie"`
+   → `ai-summit-2025-aftermovie`), verified against live pairs, which makes the
+   listing/search fallbacks reliable.
+4. **The API emits `http://cms.indaplay.hu:443/…`** — an http scheme glued to the
+   https port (reverse-proxy misconfiguration). Every URL out of the API and the
+   page payload goes through `_normalizeCmsUrl()` or the downloader would attempt
+   http-on-443.
+
+**Method note:** an early "no video markers on this page" reading was wrong — the
+portal served **gzip** regardless of `Accept-Encoding` and grep was scanning
+compressed bytes (`curl --compressed` fixed it; the tell was the 405 KB download
+vs the 4.7 MB original size). Decompress before concluding a page is empty.
+
+No DRM anywhere: zero `EXT-X-KEY`, and the instance sets `downloadEnabled: true`.
+
+---
+
+**Last update:** 2026-09-06

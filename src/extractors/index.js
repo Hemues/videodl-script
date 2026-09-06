@@ -14,6 +14,8 @@ import { RedTubeExtractor } from './redtube.js';
 import { Tube8Extractor } from './tube8.js';
 import { KVSExtractor } from './kvs.js';
 import { IndavideoExtractor } from './indavideo.js';
+import { IndaplayExtractor } from './indaplay.js';
+import { IndaEventsExtractor } from './indaevents.js';
 import { VideaExtractor } from './videa.js';
 import { VimeoExtractor } from './vimeo.js';
 import { FacebookExtractor } from './facebook.js';
@@ -63,6 +65,8 @@ const EXTRACTORS = [
   Tube8Extractor,
   KVSExtractor,
   IndavideoExtractor,
+  IndaEventsExtractor,
+  IndaplayExtractor,
   VideaExtractor,
   VimeoExtractor,
   FacebookExtractor,
@@ -162,6 +166,8 @@ export function listExtractors() {
     'Tube8':             'tube8.com',
     'KVS':               'KVS-powered sites (blowjobs.pro, tgtsporn.com, hentaigem.com)',
     'Indavideo':         'indavideo.hu',
+    'IndaEvents':        'indaevents.hu event pages (/e/<event>; IndaPlay or YouTube embeds)',
+    'IndaPlay':          'indaplay.hu, cms.indaplay.hu (PeerTube; videos, embeds, channels)',
     'Videa':             'videa.hu, videakid.hu',
     'Vimeo':             'vimeo.com',
     'Facebook':          'facebook.com, fb.watch',

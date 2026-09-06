@@ -1,6 +1,6 @@
 # videodl-cli
 
-A powerful CLI video downloader and converter with **45 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
+A powerful CLI video downloader and converter with **47 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
 
 ## Features
 
@@ -52,6 +52,8 @@ A powerful CLI video downloader and converter with **45 built-in site extractors
 | Bitchute | bitchute.com | Limited — SPA may require JavaScript rendering |
 | Imgur | imgur.com | Video/gifv posts; limited SPA support |
 | Indavideo | indavideo.hu | Full support |
+| IndaEvents | indaevents.hu | Event pages (`/e/<event>`); resolves the IndaPlay or YouTube embed |
+| IndaPlay | indaplay.hu, cms.indaplay.hu | PeerTube-backed; videos, embeds, and whole channels as playlists |
 | Videa | videa.hu, videakid.hu | Full support |
 | Motherless | motherless.com | Full support |
 | InPorn | inporn.com | Full support |

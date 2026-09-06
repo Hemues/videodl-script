@@ -13,6 +13,28 @@ All notable changes to videodl-cli will be documented in this file.
   `update-from-ytdlp.sh check`.
 
 ### Added
+- **IndaPlay extractor (`indaplay.hu`, `cms.indaplay.hu`) + IndaEvents extractor
+  (`indaevents.hu`).** IndaEvents is the Indamedia/DisplayNOW event platform behind
+  the "IndaEvents" mobile app (AI Summit Budapest, Automotive Summit, Money Talks,
+  Media Regatta, The Shift, DOGZ Fesztivál, Femina Klub, …). Event pages at
+  `/e/<event>` host no video themselves — they embed **IndaPlay**, which turned out
+  to be a **PeerTube instance** (`cms.indaplay.hu`) behind a Next.js portal.
+  `indaplay.js` prefers the PeerTube API (`/api/v1/videos/<uuid>`), yielding a
+  progressive fMP4 *and* an HLS variant per resolution (1080p/720p/360p observed),
+  plus title, description, duration, uploader and thumbnail; `indaevents.js` finds
+  the event page's embed and delegates to IndaPlay or to the YouTube extractor,
+  returning a playlist when an event page carries several recordings.
+  Also handles `/hu/csatornak/<channel>` as a playlist — e.g. the whole
+  `indaevents` channel (47 recordings) in one URL. Streams are **plain,
+  un-tokenized HLS with no DRM** (`downloadEnabled` is true on the instance).
+  Four live traps are worked around, each verified: the API returns URLs as
+  `http://cms.indaplay.hu:443/…` (http glued to the https port) and every URL is
+  normalized; a portal page carries *many* videos (31 on a watch page, 514 on the
+  home page) and the wanted one is **not** first, so the slug is matched exactly;
+  `/embed/<channel>/<id>` returns **HTTP 500** for some videos that are otherwise
+  fine, so slug resolution falls through to the channel listing and then instance
+  search; and `indaplay.hu/<channel>/<slug>` answers **200** while rendering the
+  Next.js `notfound` segment (a soft 404). See `LESSONS-LEARNED.md #17`.
 - **DRM detection (`src/drm-detect.js`).** HLS/DASH manifests are scanned for
   Widevine, PlayReady, FairPlay, generic CENC and DRM `SAMPLE-AES` before a
   download starts; a DRM stream now stops with a clear `🔒 DRM-protected:
