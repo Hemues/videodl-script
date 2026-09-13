@@ -133,11 +133,32 @@ function verifySha256(file, expected, label) {
   console.log(`  ✓ sha256 verified: ${path.basename(file)}`);
 }
 
-async function download(url, dest) {
+async function download(url, dest, attempts = 4) {
   const got = (await import('got')).default;
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const { pipeline } = await import('node:stream/promises');
-  await pipeline(got.stream(url, { headers: { 'User-Agent': 'videodl-build' } }), fs.createWriteStream(dest));
+  // got streams do not retry; a 100+ MB GitHub download occasionally drops mid-way
+  // ("socket hang up" killed a release build once). Retry with backoff — the sha256
+  // check afterwards decides whether the bytes are good, so retrying is always safe.
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await pipeline(
+        got.stream(url, { headers: { 'User-Agent': 'videodl-build' }, timeout: { request: 600_000 } }),
+        fs.createWriteStream(dest)
+      );
+      return;
+    } catch (err) {
+      lastErr = err;
+      try { fs.unlinkSync(dest); } catch {}
+      if (i < attempts) {
+        const wait = 5_000 * i;
+        console.log(`  ⚠ download attempt ${i}/${attempts} failed (${err.message}); retrying in ${wait / 1000}s …`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  }
+  throw new Error(`download failed after ${attempts} attempts: ${url} (${lastErr && lastErr.message})`);
 }
 
 function run(cmd, cmdArgs, opts = {}) {
