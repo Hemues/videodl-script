@@ -84,17 +84,21 @@ client_table_diff() {
 import re, sys, json
 base = open(sys.argv[1], encoding='utf-8').read()
 ours = open(sys.argv[2], encoding='utf-8').read()
+# Compare on the InnerTube `clientName` (what YouTube sees), not on our internal labels:
+# our 'TV' is clientName TVHTML5, our 'WEB_EMBEDDED' is WEB_EMBEDDED_PLAYER. Digits allowed.
 up = {}
-for m in re.finditer(r"'clientName':\s*'([A-Z_]+)'.*?'clientVersion':\s*'([^']+)'", base, re.S):
+for m in re.finditer(r"'clientName':\s*'([A-Z0-9_]+)'.*?'clientVersion':\s*'([^']+)'", base, re.S):
     up.setdefault(m.group(1), m.group(2))
 mine = {}
-for m in re.finditer(r"name:\s*'([A-Z_]+)'.*?clientVersion:\s*'([^']+)'", ours, re.S):
+for m in re.finditer(r"clientName:\s*'([A-Z0-9_]+)'.*?clientVersion:\s*'([^']+)'", ours, re.S):
     mine.setdefault(m.group(1), m.group(2))
-changed = {k: (mine.get(k), v) for k, v in up.items() if k in mine and mine[k] != v}
-missing = sorted(set(up) - set(mine))
-extra = sorted(set(mine) - set(up))
-print(json.dumps({'changed_versions': changed, 'only_upstream': missing, 'only_ours': extra}, indent=2))
-sys.exit(0 if not changed and not extra else 10)
+changed = {k: {'ours': mine[k], 'upstream': v} for k, v in up.items() if k in mine and mine[k] != v}
+dropped_upstream = sorted(set(mine) - set(up))          # we still use a client yt-dlp removed → act
+not_used_by_us = sorted(set(up) - set(mine))            # informational: yt-dlp knows more clients
+print(json.dumps({'changed_versions': changed, 'ours_but_dropped_upstream': dropped_upstream,
+                  'upstream_only_informational': not_used_by_us}, indent=2))
+# Only version drift or a dropped client is actionable.
+sys.exit(0 if not changed and not dropped_upstream else 10)
 PY
   local rc=$?
   rm -rf "$tmp"
