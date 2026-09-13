@@ -9,11 +9,18 @@ it does nothing.
 
 ```
 sudo -i
-bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh check
-bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh run       # the real thing
-bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh run --dry-run
-bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh status
+bash <checkout>/update-from-upstream.sh check
+bash <checkout>/update-from-upstream.sh run       # the real thing
+bash <checkout>/update-from-upstream.sh run --dry-run
+bash <checkout>/update-from-upstream.sh status
 ```
+
+**Configuration.** Everything host-specific — checkout directories, the deploy user, the
+host's updater script, image name, state directory — is read from
+`/etc/videodl-upstream.env` (template: `contrib/systemd/videodl-upstream.env.example`;
+override the location with `VIDEODL_UPSTREAM_CONFIG`). Plain environment variables take
+precedence over the file. This repository is public: those values must never be
+committed here.
 
 Exit codes: `0` nothing to do / promoted · `3` human action required (client-table
 diff, or a red gate — nothing was deployed) · `1` error.
@@ -25,7 +32,8 @@ A weekly timer (`contrib/systemd/videodl-upstream-update.{service,timer}`, Sunda
 04:00 local) runs `run`. Install / disable:
 
 ```bash
-cp contrib/systemd/videodl-upstream-update.* /etc/systemd/system/ && systemctl daemon-reload
+install -m 600 contrib/systemd/videodl-upstream.env.example /etc/videodl-upstream.env && $EDITOR /etc/videodl-upstream.env
+install -m 644 contrib/systemd/videodl-upstream-update.service contrib/systemd/videodl-upstream-update.timer /etc/systemd/system/ && systemctl daemon-reload
 systemctl enable --now videodl-upstream-update.timer
 systemctl list-timers videodl-upstream-update.timer
 systemctl disable --now videodl-upstream-update.timer        # stop the automation
@@ -117,20 +125,20 @@ Bump a pin deliberately: edit the pin, put the new sha256 next to it, build, gat
 3. `python3 tests/smoke.py --source --filter youtube` must pass.
 4. Commit (only your files — the repo has a CRLF-churn trap; see `AGENTS.md`), then
    `bash compile.sh` and `cd ../videodl-container && bash build.sh`, deploy with the
-   rootless updater, and `python3 tests/smoke.py --deployed videodl --as-user videodl --uid 10019`.
+   rootless updater, and `python3 tests/smoke.py --deployed videodl --as-user <deploy-user> --uid <uid>`.
 
-## Roles on 11.1.0.2
+## Roles on the build host
 
 | Task | Identity |
 |------|----------|
 | check / run / compile / build / gh / ghcr push | **root** (`sudo -i`) |
-| the rootless container itself | user **`videodl`** (uid 10019) — the script `sudo`s to it for deploy and `--deployed` verification |
+| the rootless container itself | the deploy user named in `/etc/videodl-upstream.env` (`DEPLOY_USER`) — the script `sudo`s to it for deploy and `--deployed` verification |
 
 ## Gotchas baked in
 
 - The build host's Node must equal `build-pins.json` (`22.22.2`): the SEA blob format is
   version-specific. Bumping Node = bump the pin + host together.
-- Extractor scripts on the Samba share are exec-bit-stripped: always `bash script.sh`.
+- Scripts checked out on a network share may lose their exec bit: always `bash script.sh`.
 - `run` refuses to start on a dirty or out-of-date `main` (only build-script version
   churn is tolerated) so it never commits someone else's half-done work.
 - No 32-bit Windows ffmpeg or CycleTLS helper exists upstream: `win-x86` ships the plain

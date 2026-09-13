@@ -244,8 +244,8 @@ Binaries are uploaded as GitHub Release assets, completely outside the git tree.
 6. Create release: `gh release create v<VERSION> --title v<VERSION> --notes-file <notes> dist/videodl.exe dist/videodl-linux dist/videodl-ffmpeg.exe dist/videodl-ffmpeg-linux dist/videodl.cjs dist/index.exe dist/index dist/cycletls-index-linux`.
 7. **Verify** uploaded binary: download from release and check `--version` output matches.
 
-**Key insight:** The `gh` CLI must be authenticated (`gh auth login`). On the NAS (11.1.0.2:60001),
-root has a valid token at `/root/.config/gh/hosts.yml`. Run via `sudo bash -c '...'`.
+**Key insight:** The `gh` CLI must be authenticated (`gh auth login`). On the build host,
+root holds the token (`~/.config/gh/hosts.yml`). Run via `sudo bash -c '...'`.
 
 **Last update:** 2026-04-17
 
@@ -543,8 +543,8 @@ CLI 2.0.136 was published but **superseded the same day** — see item 8.
    sandbox a child of the *same binary* (`__solve`), no extra runtime. Two traps:
    (a) from **source**, module loading itself is subject to the fs permission — the
    child needs `--allow-fs-read=<project>`; (b) the grant is matched against the
-   **drive-letter form of the entry path, case-sensitively** — probed on the Samba
-   share: `Z:\…` passes, `z:\…` fails, and every UNC / `realpath` form
+   **drive-letter form of the entry path, case-sensitively** — probed on a mapped
+   network drive: `Z:\…` passes, `z:\…` fails, and every UNC / `realpath` form
    (`\\server\share\…`, `\\?\UNC\…`) is denied even though the *denial message* prints
    the UNC path. Derive the grant from `argv[1]` with `path.resolve` (never realpath),
    and in Python use `os.path.abspath`, not `Path.resolve()` (which silently rewrites a

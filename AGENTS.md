@@ -14,7 +14,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Read `README.md` for supported sites, CLI flags, packaging, and release workflow.
 - Read `LESSONS-LEARNED.md` before touching extractors, HTTP/TLS behavior, or packaging.
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
-- To re-sync YouTube handling from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `./update-from-ytdlp.sh {check|ship}` (as root on 11.1.0.2).
+- To update from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → gate → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `bash update-from-upstream.sh {check|run|status}` on the build host (host-specific values live in the private `/etc/videodl-upstream.env`, never in this repo).
 
 ## Security posture & update pipeline (2026-09-13, CLI 2.0.137)
 - `REVIEW-2026-09-13.md` = the code + security review of both repos. Its High/Medium
@@ -41,7 +41,10 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   Run it from source before committing extractor/downloader changes; the pipeline runs
   it on the candidate image and again on the deployed container.
 - `update-from-upstream.sh {check|run|status}` is the yt-dlp update checker/pipeline;
-  `UPDATE-FROM-YTDLP.md` is its runbook. A weekly systemd timer on 11.1.0.2 runs it.
+  `UPDATE-FROM-YTDLP.md` is its runbook. A weekly systemd timer on the build host runs it.
+- **This repository is public.** Never commit hostnames, addresses, share paths, user
+  names/uids, updater script paths or other home-lab specifics — they belong in
+  `/etc/videodl-upstream.env` on the host or in the private container repo's docs.
 
 ## Work Safely
 - Do not commit cookies, tokens, captcha keys, account credentials, or captured request headers.

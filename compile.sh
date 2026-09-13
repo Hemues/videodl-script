@@ -24,8 +24,8 @@
 #   bash compile.sh --no-ffmpeg              # Plain binaries only (no ffmpeg variant)
 #   bash compile.sh --version=2.1.0          # Explicit version instead of auto-increment
 #
-# Run as root on 11.1.0.2 (gh auth). Extractor scripts on the Samba share are
-# exec-bit-stripped — always invoke as `bash compile.sh`.
+# Run on the build host as a user with gh auth. Scripts checked out on a network share
+# may lose their exec bit — always invoke as `bash compile.sh`.
 
 set -euo pipefail
 

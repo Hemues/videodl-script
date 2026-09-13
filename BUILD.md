@@ -23,7 +23,7 @@ the binary (same directory) for the TLS-impersonation extractors to work.
 ## Quick build
 
 ```bash
-bash compile.sh                        # all targets, both variants, publish a GitHub release (root on 11.1.0.2)
+bash compile.sh                        # all targets, both variants, publish a GitHub release (build host, gh auth)
 bash compile.sh --no-release           # same, but only into dist/ — no version bump, nothing uploaded
 bash compile.sh --targets=host         # only this machine's target (fast dev loop)
 bash compile.sh --targets=linux-x64,win-x64 --no-release
@@ -77,7 +77,7 @@ echo '{"player":"","requests":[],"solverCode":"var jsc=function(){return {type:\
 ```
 
 Windows binaries built on Linux can be smoke-tested from a Windows machine that mounts
-the share (`python tests\smoke.py --binary Z:\...\dist\videodl-ffmpeg.exe`).
+a network share (`python tests\smoke.py --binary <share>\dist\videodl-ffmpeg.exe`).
 
 ## Prerequisites (build host)
 

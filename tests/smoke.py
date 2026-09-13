@@ -8,7 +8,7 @@ point (never a copy of the code), and exits non-zero if any non-optional case fa
     python3 tests/smoke.py --source                          # node src/cli.js (dev)
     python3 tests/smoke.py --binary dist/videodl-ffmpeg-linux
     python3 tests/smoke.py --image ghcr.io/hemues/videodl:candidate      # podman run
-    python3 tests/smoke.py --deployed videodl [--as-user videodl --uid 10019]  # podman exec
+    python3 tests/smoke.py --deployed videodl [--as-user <user> --uid <uid>]   # podman exec
     python3 tests/smoke.py ... --filter indaplay             # only cases whose name contains
     python3 tests/smoke.py ... --json report.json            # machine-readable result
 

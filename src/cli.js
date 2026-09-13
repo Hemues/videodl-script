@@ -656,7 +656,7 @@ program
           .replace(/_+/g, '_')           // Collapse multiple underscores
           .replace(/^_+|_+$/g, '')       // Trim underscores from start/end
           .trim() || 'video';            // Fallback to 'video' if empty
-        // Truncate to prevent Windows MAX_PATH (260) overflow on Samba shares
+        // Truncate to prevent Windows MAX_PATH (260) overflow on network shares
         if (name.length > 150) name = name.substring(0, 150).replace(/_+$/, '');
         return name;
       };

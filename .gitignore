@@ -66,6 +66,14 @@ cookies/*.txt
 !cookies/cookies.txt.example
 logins/logins.txt
 
+# Host-specific / home-lab details — this repo is PUBLIC. Keep operational specifics
+# (hostnames, addresses, share paths, users, updater scripts) in the private env file
+# on the build host or in local notes, never in tracked docs.
+videodl-upstream.env
+local/
+LOCAL-*.md
+*.local.md
+
 # Debug dumps
 *.html
 initials-debug.json

@@ -19,9 +19,14 @@
 # engine's only production home. CLI first, container second, one component per run.
 #
 #   sudo -i
-#   bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh check
-#   bash …/update-from-upstream.sh run [--dry-run] [--no-deploy] [--component=ytdlp|ejs]
-#   bash …/update-from-upstream.sh status
+#   bash <checkout>/update-from-upstream.sh check
+#   bash <checkout>/update-from-upstream.sh run [--dry-run] [--no-deploy] [--component=ytdlp|ejs]
+#   bash <checkout>/update-from-upstream.sh status
+#
+# Host-specific settings (checkout dirs, deploy user, the host's updater script, image
+# name, state dir) come from /etc/videodl-upstream.env — see
+# contrib/systemd/videodl-upstream.env.example. Plain environment variables override it.
+# This repository is public: never hard-code such values here or in the docs.
 #
 # Exit codes: 0 = nothing to do / promoted;  3 = human action required (client table
 # diff, or a red gate — nothing deployed);  1 = error.
@@ -33,14 +38,22 @@
 
 set -euo pipefail
 
-CLI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER_DIR="${CONTAINER_DIR:-$(cd "$CLI_DIR/../videodl-container" && pwd)}"
+# --- Configuration ------------------------------------------------------------
+# Precedence: explicit environment > /etc/videodl-upstream.env (or $VIDEODL_UPSTREAM_CONFIG)
+# > generic defaults. Nothing site-specific is hard-coded in this public script.
+CONFIG_FILE="${VIDEODL_UPSTREAM_CONFIG:-/etc/videodl-upstream.env}"
+if [ -f "$CONFIG_FILE" ]; then
+  # shellcheck disable=SC1090
+  set -a; . "$CONFIG_FILE"; set +a
+fi
+CLI_DIR="${CLI_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+CONTAINER_DIR="${CONTAINER_DIR:-$(cd "$CLI_DIR/../videodl-container" 2>/dev/null && pwd || echo "$CLI_DIR/../videodl-container")}"
 STATE_DIR="${STATE_DIR:-/var/lib/videodl-upstream}"
 REPORT_DIR="$STATE_DIR/reports"
-IMAGE="ghcr.io/hemues/videodl"
-DEPLOY_USER="videodl"
-DEPLOY_UID="$(id -u "$DEPLOY_USER" 2>/dev/null || echo 10019)"
-UPDATER="/etc/scripts/podman-videodl-updater-inside-pod"
+IMAGE="${IMAGE:-ghcr.io/hemues/videodl}"
+DEPLOY_USER="${DEPLOY_USER:-videodl}"
+DEPLOY_UID="${DEPLOY_UID:-$(id -u "$DEPLOY_USER" 2>/dev/null || echo 1000)}"
+UPDATER="${UPDATER:-}"   # host updater script — required for a real deploy (see env example)
 YTDLP_KEY_URL="https://raw.githubusercontent.com/yt-dlp/yt-dlp/master/public.key"
 EJS_REPO="yt-dlp/ejs"
 
@@ -159,7 +172,7 @@ verify_ytdlp_release() {
 build_candidate_container() {
   local cli_tag="$1"
   c "Building CANDIDATE container (embeds CLI $cli_tag) — never :latest"
-  ( cd "$CONTAINER_DIR" && bash build.sh --tag "$cli_tag" --image="$IMAGE:candidate" --no-push --no-release )
+  ( cd "$CONTAINER_DIR" && bash build.sh --tag="$cli_tag" --image="$IMAGE:candidate" --no-push --no-release )
 }
 
 gate() {
@@ -177,11 +190,12 @@ previous_image_tag() { gh release view --repo Hemues/videodl-container --json ta
 promote_and_deploy() {
   local cli_tag="$1" expect_ytdlp="$2"
   c "Promote candidate → :latest + versioned tag + GitHub release"
-  ( cd "$CONTAINER_DIR" && bash build.sh --promote="$IMAGE:candidate" --tag "$cli_tag" --no-increment )
+  ( cd "$CONTAINER_DIR" && bash build.sh --promote="$IMAGE:candidate" --tag="$cli_tag" --no-increment )
   local new_ver; new_ver="$(grep -m1 '^version = ' "$CONTAINER_DIR/pyproject.toml" | sed 's/version = "\(.*\)"/\1/' | tr -d '\r')"
   report "- container released: v$new_ver (embeds CLI $cli_tag, yt-dlp $expect_ytdlp)"
 
-  if $NO_DEPLOY; then warn "--no-deploy: image is on ghcr as :latest and :v$new_ver; deploy later with: sudo -iu $DEPLOY_USER $UPDATER"; return 0; fi
+  if $NO_DEPLOY; then warn "--no-deploy: image is on the registry as :latest and :v$new_ver; deploy later with your host's updater as $DEPLOY_USER"; return 0; fi
+  [ -n "$UPDATER" ] && [ -x "$UPDATER" ] || die "UPDATER is not set or not executable — put the host's updater script path in $CONFIG_FILE (see contrib/systemd/videodl-upstream.env.example) or use --no-deploy"
 
   c "Deploy (rootless updater as $DEPLOY_USER)"
   sudo -n -u "$DEPLOY_USER" env XDG_RUNTIME_DIR="/run/user/$DEPLOY_UID" podman pull -q "$IMAGE:latest"   # pre-pull: minimal downtime

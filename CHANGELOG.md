@@ -69,6 +69,12 @@ Fixes for the findings in `REVIEW-2026-09-13.md` (all items verified with the ne
 - yt-dlp fallback: removed the mis-parenthesised format filter that kept only
   `videoplayback` URLs (it fell through to "everything" by accident).
 - `npm test` now runs `tests/smoke.py --source`.
+- **Home-lab specifics removed from this (public) repository.** Host addresses, share
+  paths, user names/uids, the updater script path and similar details are gone from the
+  docs and scripts; `update-from-upstream.sh` and its systemd unit now read them from a
+  private `/etc/videodl-upstream.env` (template in `contrib/systemd/`). `.gitignore`
+  blocks that file and `local/` / `LOCAL-*.md` notes. (Earlier commits still contain
+  the old text — see the release notes for the history-rewrite option.)
 
 ### Added
 - **`tests/smoke.py` + `tests/smoke-urls.json`** — the acceptance gate. Runs fixed
