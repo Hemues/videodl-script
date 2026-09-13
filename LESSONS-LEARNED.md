@@ -521,7 +521,8 @@ No DRM anywhere: zero `EXT-X-KEY`, and the instance sets `downloadEnabled: true`
 
 ## #18 — Security hardening 2026-09-13: the fixes and what they taught
 
-✅ Shipped as CLI 2.0.136 / container 2.0.137 (see `REVIEW-2026-09-13.md` for the findings).
+✅ Shipped as CLI 2.0.137 / container 2.0.138 (see `REVIEW-2026-09-13.md` for the findings).
+CLI 2.0.136 was published but **superseded the same day** — see item 8.
 
 1. **ffmpeg's `-protocol_whitelist` is per *input* and applies to every nested open.**
    `file` had been added so a locally written variant playlist could be an input; that
@@ -564,6 +565,19 @@ No DRM anywhere: zero `EXT-X-KEY`, and the instance sets `downloadEnabled: true`
    runs the binary *inside the image*, `--deployed` runs it inside the live container.
    A green run from source proves the code; only a green run of the image proves the
    release.
+8. **The gate earned its keep on its first day — and exposed its own blind spot.** The
+   2.0.136 candidate image passed every case… with a 0.3 MB "media header ok" probe
+   file. The BtbN **master** ffmpeg snapshot pinned that morning (`N-126523`, 2026-09-12)
+   reads all byte-range fMP4 segments ("HLS reusing connection … offset …") but writes
+   only the first 4 s and **exits 0** — silent truncation. The same command with the
+   image's RPM Fusion ffmpeg 8.1.2 wrote the full 20 MB. Three lessons: (a) pin the
+   **release branch** (`n8.1.x`) of a fast-moving upstream, not `master`; (b) a
+   "valid header, non-trivial size" check is not a completeness check — the probe now
+   pins `minProbeBytes` per case; (c) the host-binary run passed only because the CLI
+   silently used the *host's* system ffmpeg: `ffmpeg-helper.js` probed PATH with
+   `which`, which fedora-minimal does not ship, so inside the container the system
+   ffmpeg was invisible and the embedded one was used. Same binary, different
+   environment, different result — test in the environment that ships (7.).
 
 ---
 

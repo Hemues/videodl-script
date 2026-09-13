@@ -17,16 +17,32 @@ const GITHUB_RELEASES_URL = 'https://api.github.com/repos/BtbN/FFmpeg-Builds/rel
  * @returns {boolean}
  */
 export function checkFFmpegInPath() {
-  try {
-    if (process.platform === 'win32') {
-      execSync('where ffmpeg', { stdio: 'ignore' });
-    } else {
-      execSync('which ffmpeg', { stdio: 'ignore' });
+  return findFFmpegInPath() !== null;
+}
+
+/**
+ * Resolve `ffmpeg` on PATH in-process and return its absolute path (or null).
+ *
+ * This used to spawn `which` / `where`. fedora-minimal — the VideoDL container base —
+ * ships neither, so inside the container the RPM Fusion ffmpeg in /usr/bin was
+ * invisible and the embedded copy was always extracted instead. Scanning PATH
+ * ourselves has no such dependency and also yields the concrete path for logging.
+ * @returns {string|null}
+ */
+export function findFFmpegInPath() {
+  const names = process.platform === 'win32' ? ['ffmpeg.exe', 'ffmpeg.cmd', 'ffmpeg'] : ['ffmpeg'];
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch {
+        // not here
+      }
     }
-    return true;
-  } catch {
-    return false;
   }
+  return null;
 }
 
 /**
@@ -43,9 +59,10 @@ export function getFFmpegPath() {
     return bundledPath;
   }
   
-  // Check if in PATH
-  if (checkFFmpegInPath()) {
-    return 'ffmpeg';
+  // Check if in PATH (system ffmpeg is preferred over the embedded copy)
+  const onPath = findFFmpegInPath();
+  if (onPath) {
+    return onPath;
   }
   
   // Check local installation (~/.videodl-cli/ffmpeg/bin/)

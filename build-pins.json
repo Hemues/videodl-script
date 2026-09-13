@@ -1,5 +1,5 @@
 {
-  "_comment": "Pinned, checksum-verified build inputs. build.mjs refuses to use an archive whose sha256 differs. Bump deliberately (update-from-upstream.sh or by hand), never implicitly. Node: sha256 from https://nodejs.org/dist/v<ver>/SHASUMS256.txt. ffmpeg: BtbN dated autobuild tag + its checksums.sha256 (master-branch 'N-' builds, same lineage videodl has always shipped).",
+  "_comment": "Pinned, checksum-verified build inputs. build.mjs refuses to use an archive whose sha256 differs. Bump deliberately (update-from-upstream.sh or by hand), never implicitly. Node: sha256 from https://nodejs.org/dist/v<ver>/SHASUMS256.txt. ffmpeg: BtbN dated autobuild tag + its checksums.sha256 — the RELEASE-BRANCH (n8.1) builds, NOT the master 'N-' snapshots: master N-126523 (2026-09-12) silently truncated byte-range HLS downloads to the first segment (exit 0); caught by tests/smoke.py on the 2.0.136 candidate.",
   "node": {
     "version": "22.22.2",
     "sha256": {
@@ -12,10 +12,11 @@
   "ffmpeg": {
     "repo": "BtbN/FFmpeg-Builds",
     "tag": "autobuild-2026-09-12-13-12",
+    "lineage": "release/8.1",
     "assets": {
-      "linux-x64":   { "name": "ffmpeg-N-126523-g884590dd4a-linux64-gpl.tar.xz",    "sha256": "2ff53a392171d821276a7ac9f02ade666bee565ff5d3cb6460414cb35561c66a" },
-      "linux-arm64": { "name": "ffmpeg-N-126523-g884590dd4a-linuxarm64-gpl.tar.xz", "sha256": "fb009fa1912e7b88f203411a9f90faec8c02a03dafb1373d7d68a27f29ddf8d2" },
-      "win-x64":     { "name": "ffmpeg-N-126523-g884590dd4a-win64-gpl.zip",         "sha256": "e9270cbe3f10eafbff5963f5e7c6b7e24be518e9734776571f64360428a2d134" }
+      "linux-x64":   { "name": "ffmpeg-n8.1.2-52-g5a03dfa0f6-linux64-gpl-8.1.tar.xz",    "sha256": "682dba33847c14b496b51bb4f8bd6601a180295d038928c68c558ab8978d6fa8" },
+      "linux-arm64": { "name": "ffmpeg-n8.1.2-52-g5a03dfa0f6-linuxarm64-gpl-8.1.tar.xz", "sha256": "c575dc71e07878219de9f9f5a3e2387697524f58b2e8de6dca03086eb7925d68" },
+      "win-x64":     { "name": "ffmpeg-n8.1.2-52-g5a03dfa0f6-win64-gpl-8.1.zip",         "sha256": "8ebd7e82791b8f753ade7fd6f2eacf8ce02127dfb1f25102d85154d1779cd2de" }
     },
     "_note": "No 32-bit Windows ffmpeg exists upstream any more, so win-x86 only gets the plain (ffmpeg-on-first-use) binary."
   }

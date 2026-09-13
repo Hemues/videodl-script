@@ -16,9 +16,11 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
 - To re-sync YouTube handling from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `./update-from-ytdlp.sh {check|ship}` (as root on 11.1.0.2).
 
-## Security posture & update pipeline (2026-09-13, CLI 2.0.136)
+## Security posture & update pipeline (2026-09-13, CLI 2.0.137)
 - `REVIEW-2026-09-13.md` = the code + security review of both repos. Its High/Medium
-  findings are **fixed** in 2.0.136 (`CHANGELOG.md` → Security, `LESSONS-LEARNED.md #18`).
+  findings are **fixed** in 2.0.137 (`CHANGELOG.md` → Security, `LESSONS-LEARNED.md #18`).
+  2.0.136 exists on GitHub but is superseded (its embedded ffmpeg master snapshot
+  truncates byte-range HLS) — never embed it.
   Keep these invariants when editing:
   - `downloader.js`: ffmpeg `-protocol_whitelist` must never contain `file`; local
     playlists go in as `data:` URIs (`hlsPlaylistToDataUri`).

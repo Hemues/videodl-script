@@ -7,7 +7,8 @@
       "extractor": "IndaPlay",
       "minFormats": 3,
       "probe": true,
-      "note": "PeerTube API path; probe downloads the smallest format and checks it is real media"
+      "minProbeBytes": 15000000,
+      "note": "PeerTube API path; `-f worst` resolves to the HLS 360p variant (19.3 MB, byte-range fMP4) — the size floor caught a BtbN ffmpeg master snapshot that wrote only the first segment and exited 0 (2026-09-13)"
     },
     {
       "name": "indaevents-delegation",

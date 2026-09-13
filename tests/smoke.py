@@ -117,14 +117,14 @@ class Runner:
         # deployed: inside the running container's download volume
         return f'/downloads/.smoke-{int(time.time())}', None
 
-    def inspect_media(self, cli_dir, host_dir):
+    def inspect_media(self, cli_dir, host_dir, min_bytes=50_000):
         """Return (ok, detail) for the newest file in the probe dir."""
         if host_dir is not None:
             files = [p for p in Path(host_dir).iterdir() if p.is_file()]
             if not files:
                 return False, 'no file produced'
             f = max(files, key=lambda p: p.stat().st_mtime)
-            return _media_check(f.read_bytes()[:16], f.stat().st_size, f.name)
+            return _media_check(f.read_bytes()[:16], f.stat().st_size, f.name, min_bytes)
         # deployed: inspect inside the container with its python3
         code = (
             "import os,sys,json;d=sys.argv[1];fs=[os.path.join(d,x) for x in os.listdir(d)] if os.path.isdir(d) else [];"
@@ -138,7 +138,7 @@ class Runner:
             return False, f'could not inspect probe file: {err.strip()[-200:]}'
         if not info:
             return False, 'no file produced'
-        return _media_check(bytes.fromhex(info['head']), info['size'], info['name'])
+        return _media_check(bytes.fromhex(info['head']), info['size'], info['name'], min_bytes)
 
     def cleanup_probe(self, cli_dir, host_dir):
         if host_dir is not None:
@@ -149,9 +149,12 @@ class Runner:
             self.run(['-c', f"import shutil;shutil.rmtree({cli_dir!r}, ignore_errors=True)"], entrypoint='python3', timeout=60)
 
 
-def _media_check(head: bytes, size: int, name: str):
-    if size < 50_000:
-        return False, f'{name}: only {size} bytes'
+def _media_check(head: bytes, size: int, name: str, min_bytes: int = 50_000):
+    # A truncated-but-valid file is the dangerous case: ffmpeg once wrote a single
+    # 4-second segment (0.3 MB) of a 19 MB video and exited 0. Cases pin the expected
+    # size with "minProbeBytes" so silent truncation fails the gate.
+    if size < min_bytes:
+        return False, f'{name}: only {size} bytes (< minProbeBytes {min_bytes}) — truncated download?'
     if head.lstrip()[:1] in (b'<', b'{'):
         return False, f'{name}: starts like HTML/JSON, not media'
     magic_ok = (b'ftyp' in head) or head.startswith(b'\x1aE\xdf\xa3') or head.startswith(b'\x00\x00\x01\xba') or head.startswith(b'RIFF')
@@ -250,7 +253,7 @@ def run_case(runner: Runner, case: dict) -> dict:
                     result['detail'] = detail + f' | probe download failed rc={rc2}: {err2.strip()[-300:]}'
                     runner.cleanup_probe(cli_dir, host_dir)
                     return result
-                ok, mdetail = runner.inspect_media(cli_dir, host_dir)
+                ok, mdetail = runner.inspect_media(cli_dir, host_dir, int(case.get('minProbeBytes', 50_000)))
                 runner.cleanup_probe(cli_dir, host_dir)
                 if not ok:
                     result['detail'] = detail + f' | probe: {mdetail}'
@@ -309,7 +312,12 @@ def main() -> int:
         rc, out, _ = runner.run(['--version'], timeout=60, entrypoint=YTDLP_IN_IMAGE)
         versions['ytdlp'] = out.strip().splitlines()[0] if out.strip() else None
         print(f'  versions: cli={versions["cli"]}  yt-dlp={versions["ytdlp"]}')
-        if a.expect_ytdlp and versions['ytdlp'] != a.expect_ytdlp:
+
+        # yt-dlp prints its GitHub tag form (2026.08.19); PyPI / requirements.in use the
+        # normalised form (2026.8.19). Compare component-wise with leading zeros dropped.
+        def _norm(v):
+            return '.'.join(p.lstrip('0') or '0' for p in str(v or '').strip().split('.'))
+        if a.expect_ytdlp and _norm(versions['ytdlp']) != _norm(a.expect_ytdlp):
             results.append({'name': 'ytdlp-version', 'ok': False, 'optional': False,
                             'detail': f'yt-dlp is {versions["ytdlp"]!r}, expected {a.expect_ytdlp!r}', 'seconds': 0})
             print(f'  [FAIL] ytdlp-version: {results[-1]["detail"]}')

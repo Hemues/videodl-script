@@ -47,6 +47,16 @@ Fixes for the findings in `REVIEW-2026-09-13.md` (all items verified with the ne
   The vendored challenge solver is pinned to `yt-dlp/ejs 0.8.0` in
   `src/vendor/ejs.lock.json` (sha256-checked by `compile.sh`); the file itself was
   normalised to LF so it hashes identically to the upstream asset.
+- **ffmpeg pinned to the BtbN *release-branch* build (`n8.1.2`), not `master`.** The
+  first pinned master snapshot (`N-126523`, 2026-09-12, shipped in the superseded
+  2.0.136) silently truncated byte-range HLS downloads to the first segment with exit
+  code 0; `tests/smoke.py` caught it on the candidate container (`LESSONS-LEARNED.md
+  #18`, item 8). The probe now enforces a per-case `minProbeBytes`.
+- **System ffmpeg is found without `which`.** `ffmpeg-helper.js` probed PATH by
+  spawning `which`, which fedora-minimal (the container base) does not ship — so inside
+  the container the RPM Fusion ffmpeg was invisible and the embedded copy was always
+  extracted. PATH is now scanned in-process; a system ffmpeg on PATH is preferred and
+  the embedded one is the fallback, as documented.
 - **Multi-target release builds** (`build.mjs --targets=all`, default for `compile.sh`):
   `linux-x64`, `linux-arm64`, `win-x64` (plain + ffmpeg-embedded each) and `win-x86`
   (plain only — no 32-bit ffmpeg or CycleTLS helper exist upstream). All cross-built
