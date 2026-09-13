@@ -16,6 +16,14 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
 - To re-sync YouTube handling from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `./update-from-ytdlp.sh {check|ship}` (as root on 11.1.0.2).
 
+## Open Review (2026-09-13)
+- `REVIEW-2026-09-13.md` holds a code + security review of both repos and the design for
+  automated, test-gated updates from yt-dlp. Read it before touching `downloader.js`
+  ffmpeg arguments, `-o`/filename handling, the login flow, or the build scripts — the
+  High findings there (ffmpeg `file:` whitelist, `custom_name_prefix` traversal + literal
+  `%(title)s` template, in-process solver execution) are **unfixed** until its §5 items
+  are shipped and this section is updated.
+
 ## Work Safely
 - Do not commit cookies, tokens, captcha keys, account credentials, or captured request headers.
 - Treat extractor fixes as site-specific protocol work. Prefer small adapters and fixtures over broad rewrites.
