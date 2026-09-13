@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly videodl upstream (yt-dlp/ejs) update check + gated rollout
+
+[Timer]
+# Sunday 04:00 local time (Europe/Budapest on the host) — quiet hour: the deploy
+# step restarts the download service.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=videodl-upstream-update.service
+
+[Install]
+WantedBy=timers.target

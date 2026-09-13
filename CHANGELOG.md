@@ -4,7 +4,78 @@ All notable changes to videodl-cli will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+Fixes for the findings in `REVIEW-2026-09-13.md` (all items verified with the new
+`tests/smoke.py` gate before release):
+- **HLS: `file:` removed from ffmpeg's protocol whitelist** (`downloader.js`). A remote
+  playlist could otherwise reference `file:///…` segments and make ffmpeg read local
+  files — in the container `/config` holds every user's secrets (CVE-2016-1897/1898
+  class). Filtered/relative playlists are now passed to ffmpeg as **in-memory `data:`
+  URIs** (`hlsPlaylistToDataUri`, all references absolutised), so no temp playlist is
+  written to the download folder either. `-allowed_extensions ALL` stays (needed for
+  obfuscated segment names) — it was only dangerous combined with `file`.
+- **`-o` output filename confined to the download directory** and **`%(title)s`,
+  `%(ext)s`, `%(id)s`, `%(extractor)s`, `%(quality)s` templates now expanded**
+  (`resolveOutputFilename` in `cli.js`, used by `download` and `download-json` incl.
+  playlist entries). Before: `-o ../x` escaped the directory (CWE-22) and the container's
+  `custom_name_prefix` downloads were saved literally as `prefix.%(title)s.%(ext)s`.
+- **YouTube challenge solver runs in a sandboxed child process** (`solver-sandbox.js`,
+  `solver-host.js`, hidden `__solve` subcommand). The solver executes YouTube's player
+  JavaScript; it now runs in a child of the same binary started with Node's permission
+  model (`--permission`: no fs, no child_process, no workers), fed via stdin. Verified
+  live that the SEA honours `NODE_OPTIONS=--permission`. Debug escape hatch:
+  `VIDEODL_SOLVER_UNSANDBOXED=1` (loud warning, never automatic).
+- **SSRF guard** (`url-guard.js`): URLs pointing at loopback / RFC1918 / link-local /
+  CGNAT / multicast / reserved ranges, `localhost`/`*.local`/`*.internal`, non-http(s)
+  schemes, and hostnames resolving to such addresses are refused — for the input URL,
+  every media/fallback/audio URL, and every redirect (`got` `beforeRedirect` hook).
+  Opt-out for legitimate LAN use: `--allow-private-urls` or `VIDEODL_ALLOW_PRIVATE_URLS=1`.
+- **yt-dlp fallback no longer disables TLS verification.** `--no-check-certificates` was
+  hard-coded for the 1000+-site path (cookies included); it is now only passed when the
+  user explicitly runs with `--no-ssl-verify`.
+- **Header injection**: `-H` values and extractor headers are stripped of CR/LF before
+  being CRLF-joined into ffmpeg's `-headers`.
+- **HTML-as-video root cause**: the direct download path now rejects a `text/html`
+  response instead of saving the page as media (the container's after-the-fact guard
+  stays as belt-and-braces).
+
 ### Changed
+- **Reproducible, integrity-checked builds.** `package-lock.json` is committed and
+  `compile.sh` uses `npm ci`; Node.js (v22.22.2) and BtbN ffmpeg
+  (`autobuild-2026-09-12-13-12`) are pinned with sha256 in `build-pins.json` and every
+  archive is verified before use — the build host's own Node is no longer what ships.
+  The vendored challenge solver is pinned to `yt-dlp/ejs 0.8.0` in
+  `src/vendor/ejs.lock.json` (sha256-checked by `compile.sh`); the file itself was
+  normalised to LF so it hashes identically to the upstream asset.
+- **Multi-target release builds** (`build.mjs --targets=all`, default for `compile.sh`):
+  `linux-x64`, `linux-arm64`, `win-x64` (plain + ffmpeg-embedded each) and `win-x86`
+  (plain only — no 32-bit ffmpeg or CycleTLS helper exist upstream). All cross-built
+  from the Linux host with postject; V8 code cache is only enabled for the host's own
+  target. Every release now ships `SHA256SUMS`, which the container build verifies.
+- `canHandle()` for IndaPlay/IndaEvents matches the **hostname** (new `hostMatches()`
+  helper in `base.js`) instead of a substring anywhere in the URL; IndaPlay no longer
+  guesses a non-existent `…/<uuid>/master.m3u8` fallback and does not fetch the same
+  portal page twice while resolving a slug.
+- yt-dlp fallback: removed the mis-parenthesised format filter that kept only
+  `videoplayback` URLs (it fell through to "everything" by accident).
+- `npm test` now runs `tests/smoke.py --source`.
+
+### Added
+- **`tests/smoke.py` + `tests/smoke-urls.json`** — the acceptance gate. Runs fixed
+  public cases through the *public CLI entry point* of the artefact under test
+  (`--source`, `--binary`, `--image` via `podman run`, `--deployed` via `podman exec`):
+  extraction + expected extractor + minimum formats, a smallest-format download with a
+  media-header check, SSRF and `-o` traversal negative tests, and a sandbox probe that
+  must get `ERR_ACCESS_DENIED` from the solver child. Non-optional failures exit 1.
+- **`update-from-upstream.sh`** — the yt-dlp update checker/pipeline (`check` / `run`
+  / `status`). Detects new yt-dlp (PyPI) and yt-dlp/ejs releases, verifies yt-dlp's
+  signed `SHA2-256SUMS`, pins + hash-locks the container's `requirements.txt`, vendors
+  a new solver, recompiles all CLI targets, builds a **candidate** container
+  (`:candidate`, never `:latest`), runs the smoke gate on it, and only then promotes,
+  pushes (`:latest` + `:vX.Y.Z`), releases, deploys and re-verifies the deployed
+  container — rolling back to the previous versioned image if that fails. The InnerTube
+  client table is diffed and reported only (human decision). `contrib/systemd/` holds a
+  weekly timer (Sunday 04:00). Documented in `UPDATE-FROM-YTDLP.md`.
 - **Synced the InnerTube client table with yt-dlp (2026-07-19).** Refreshed
   `clientVersion`s: `TVHTML5` → 7.20260707.07.00, `WEB_EMBEDDED_PLAYER` →
   2.20260708.00.00, `WEB_CREATOR` → 1.20260708.06.00, `IOS` → 21.26.4

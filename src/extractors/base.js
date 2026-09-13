@@ -3,6 +3,31 @@
  * All site-specific extractors extend this
  */
 
+/**
+ * True when the URL's *hostname* is one of `domains` or a subdomain of it.
+ *
+ * Use this in `canHandle()` instead of a substring regex over the whole URL:
+ * `/pornhub\.com/i.test(url)` also matches `https://example.com/?u=pornhub.com`
+ * and routes the wrong extractor. Hostname matching cannot be fooled by the path
+ * or query string.
+ *
+ * @param {string} url
+ * @param {string|string[]} domains  e.g. 'indaplay.hu' or ['youtube.com', 'youtu.be']
+ */
+export function hostMatches(url, domains) {
+  let host;
+  try {
+    host = new URL(String(url)).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const list = Array.isArray(domains) ? domains : [domains];
+  return list.some(d => {
+    const domain = String(d).toLowerCase();
+    return host === domain || host.endsWith('.' + domain);
+  });
+}
+
 export class BaseExtractor {
   constructor() {
     this.name = 'BaseExtractor';

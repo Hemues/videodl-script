@@ -7,12 +7,19 @@
  *
  * In the VideoDL container yt-dlp is always available (installed via pip).
  * In standalone mode it gracefully fails if yt-dlp is not on PATH.
+ *
+ * Security notes:
+ *   - yt-dlp is invoked with execFile + an argv array and a `--` separator, so a
+ *     URL can neither inject shell metacharacters nor be parsed as an option.
+ *   - TLS verification is ON. `--no-check-certificates` is only passed when the
+ *     user explicitly disabled verification (`--no-ssl-verify`), matching the rest
+ *     of the CLI. It used to be hard-coded, which exposed the whole fallback path
+ *     (and the user's cookie file) to on-path attackers.
  */
 
 import { BaseExtractor } from './base.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
 
 const execFileAsync = promisify(execFile);
 
@@ -48,6 +55,12 @@ async function findYtdlp() {
   return false;
 }
 
+/** Only disable TLS verification when the caller explicitly asked for it. */
+function tlsArgs(options) {
+  const disabled = options.sslVerify === false || options.rejectUnauthorized === false;
+  return disabled ? ['--no-check-certificates'] : [];
+}
+
 export class YtdlpExtractor extends BaseExtractor {
   constructor() {
     super();
@@ -79,7 +92,7 @@ export class YtdlpExtractor extends BaseExtractor {
       '--dump-json',       // Output metadata as JSON
       '--no-playlist',     // Single video only (playlists handled below)
       '--no-warnings',
-      '--no-check-certificates',
+      ...tlsArgs(options),
     ];
 
     // Pass cookies through if provided
@@ -140,7 +153,7 @@ export class YtdlpExtractor extends BaseExtractor {
       '--dump-json',
       '--flat-playlist',   // Only extract metadata, not full info per entry
       '--no-warnings',
-      '--no-check-certificates',
+      ...tlsArgs(options),
     ];
 
     if (options.cookies && options._cookieFile) {
@@ -201,10 +214,10 @@ export class YtdlpExtractor extends BaseExtractor {
       _hlsPlaylist: (fmt.protocol === 'm3u8' || fmt.protocol === 'm3u8_native') ? fmt.url : null,
     }));
 
-    // Filter out storyboard/mhtml formats
-    const validFormats = formats.filter(f =>
-      f.ext !== 'mhtml' && f.url && !f.url.includes('videoplayback') === false
-    ).filter(f => f.url);
+    // Drop storyboards (mhtml) and formats without a URL. (An earlier version had a
+    // mis-parenthesised filter that kept only URLs containing "videoplayback" and then
+    // fell back to everything — it worked by accident. Keep it simple.)
+    const validFormats = formats.filter(f => f.ext !== 'mhtml' && !!f.url);
 
     return {
       _type: 'video',
@@ -213,7 +226,7 @@ export class YtdlpExtractor extends BaseExtractor {
       url: data.webpage_url || url,
       webpage_url: data.webpage_url || url,
       extractor: `yt-dlp:${data.extractor || data.extractor_key || 'unknown'}`,
-      formats: validFormats.length > 0 ? validFormats : formats.filter(f => f.url),
+      formats: validFormats,
       subtitles: this._parseSubtitles(data.subtitles, data.automatic_captions),
       thumbnail: data.thumbnail || null,
       duration: data.duration || null,

@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json IS committed: compile.sh uses `npm ci` so every build resolves
+# the exact same dependency tree (reproducible builds, no silent upstream drift).
 yarn.lock
 pnpm-lock.yaml
 

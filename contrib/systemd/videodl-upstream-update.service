@@ -1,0 +1,18 @@
+[Unit]
+Description=videodl: check yt-dlp/ejs upstream and roll a gated update through CLI + container
+Documentation=file:///storage/Samba/Temp/git/containers/videodl-script/UPDATE-FROM-YTDLP.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Environment=HOME=/root
+Environment=STATE_DIR=/var/lib/videodl-upstream
+WorkingDirectory=/storage/Samba/Temp/git/containers/videodl-script
+ExecStart=/usr/bin/bash /storage/Samba/Temp/git/containers/videodl-script/update-from-upstream.sh run
+# exit 3 = "human action required" (client-table diff or red gate) — not a unit failure
+SuccessExitStatus=0 3
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=idle

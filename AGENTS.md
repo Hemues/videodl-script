@@ -16,13 +16,30 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
 - To re-sync YouTube handling from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `./update-from-ytdlp.sh {check|ship}` (as root on 11.1.0.2).
 
-## Open Review (2026-09-13)
-- `REVIEW-2026-09-13.md` holds a code + security review of both repos and the design for
-  automated, test-gated updates from yt-dlp. Read it before touching `downloader.js`
-  ffmpeg arguments, `-o`/filename handling, the login flow, or the build scripts — the
-  High findings there (ffmpeg `file:` whitelist, `custom_name_prefix` traversal + literal
-  `%(title)s` template, in-process solver execution) are **unfixed** until its §5 items
-  are shipped and this section is updated.
+## Security posture & update pipeline (2026-09-13, CLI 2.0.136)
+- `REVIEW-2026-09-13.md` = the code + security review of both repos. Its High/Medium
+  findings are **fixed** in 2.0.136 (`CHANGELOG.md` → Security, `LESSONS-LEARNED.md #18`).
+  Keep these invariants when editing:
+  - `downloader.js`: ffmpeg `-protocol_whitelist` must never contain `file`; local
+    playlists go in as `data:` URIs (`hlsPlaylistToDataUri`).
+  - `cli.js`: any user-supplied output name goes through `resolveOutputFilename()`
+    (template expansion + confinement to `-d`).
+  - URLs that will be fetched go through `assertPublicUrl()` (`url-guard.js`); `got`
+    calls that follow redirects should spread `privateGuardHooks()`.
+  - The YouTube solver only runs via `solver-sandbox.js` (child + `--permission`).
+  - New `canHandle()` = `hostMatches(url, [...])`, never a substring regex.
+- Builds are pinned: `build-pins.json` (Node, ffmpeg + sha256), `src/vendor/ejs.lock.json`
+  (solver), committed `package-lock.json` + `npm ci`. Bump pins deliberately, with the
+  new hash. The host Node must equal the pinned version (SEA blob format).
+- `bash compile.sh` builds **all targets** (linux-x64, linux-arm64, win-x64 ×2 variants,
+  win-x86 plain) and uploads `SHA256SUMS`; the container `build.sh` verifies against it,
+  pushes `:latest` **and** `:vX.Y.Z`, and has `--no-release` / `--promote=<ref>` for
+  the candidate → promote flow.
+- `tests/smoke.py` is the acceptance gate (`--source|--binary|--image|--deployed`).
+  Run it from source before committing extractor/downloader changes; the pipeline runs
+  it on the candidate image and again on the deployed container.
+- `update-from-upstream.sh {check|run|status}` is the yt-dlp update checker/pipeline;
+  `UPDATE-FROM-YTDLP.md` is its runbook. A weekly systemd timer on 11.1.0.2 runs it.
 
 ## Work Safely
 - Do not commit cookies, tokens, captcha keys, account credentials, or captured request headers.

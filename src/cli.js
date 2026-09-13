@@ -13,6 +13,8 @@ import { cfProtectedDownload } from './cf-solver.js';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { getFullHelp, getSupportedSitesHelp } from './help.js';
 import { generateCookies, checkCookieExpiry, DEFAULT_COOKIE_FILE, DEFAULT_LOGIN_FILE } from './cookie-generator.js';
+import { setPrivateUrlPolicy, assertPublicUrl } from './url-guard.js';
+import { SOLVE_SUBCOMMAND } from './solver-sandbox.js';
 
 const program = new Command();
 
@@ -294,6 +296,7 @@ program
   .option('--no-base-url', 'Do not add base domain to filename (domain is added by default)')
   .option('--list-formats', 'List available formats without downloading')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format (like yt-dlp)')
+  .option('--allow-private-urls', 'Allow private/LAN/loopback addresses (blocked by default; env VIDEODL_ALLOW_PRIVATE_URLS=1)')
   .option('--generate-cookies', 'Auto-regenerate cookies from logins.txt if they have expired')
   .option('--force-cookies', 'Force cookie regeneration even if cookies appear valid (use when server rejects session)')
   .option('--no-headless', 'Show browser window during cookie generation (allows manual CAPTCHA solving)')
@@ -309,6 +312,8 @@ program
   .action(async (rawUrl, options) => {
     try {
       const url = cleanUrl(rawUrl);
+      applyPrivateUrlPolicy(options);
+      await assertPublicUrl(url, { label: 'URL' });
       const cookieFile = options.cookies || DEFAULT_COOKIE_FILE;
       const loginFile = options.logins || DEFAULT_LOGIN_FILE;
 
@@ -666,17 +671,24 @@ program
         }
       };
 
+      // HLS pair → mkv for multi-audio, mp4 for single, otherwise use formatPair or selectedFormat ext
+      const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv'
+        : (formatPair && formatPair._hlsVideoUrl) ? 'mp4'
+        : formatPair ? formatPair.ext
+        : (selectedFormat.ext || 'mp4');
+
       // Build filename with base domain (by default, unless --no-base-url is specified)
       let filename;
       if (options.output) {
-        filename = options.output;
+        // -o: expand %(title)s / %(ext)s / … and refuse anything leaving the directory
+        filename = resolveOutputFilename(options.output, {
+          title: videoInfo.title, ext,
+          id: videoInfo.id || videoInfo.videoId,
+          extractor: videoInfo.extractor,
+          quality: selectedFormat && selectedFormat.quality,
+        }, options.directory || './downloads');
       } else {
         const baseName = sanitizeFilename(videoInfo.title);
-        // HLS pair → mkv for multi-audio, mp4 for single, otherwise use formatPair or selectedFormat ext
-        const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv'
-          : (formatPair && formatPair._hlsVideoUrl) ? 'mp4'
-          : formatPair ? formatPair.ext
-          : (selectedFormat.ext || 'mp4');
         // Add domain by default (baseUrl defaults to true)
         if (options.baseUrl !== false) {
           const domain = extractBaseDomain(url);
@@ -919,9 +931,12 @@ program
   .description('List all available formats for a video URL')
   .alias('formats-list')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format (like yt-dlp)')
+  .option('--allow-private-urls', 'Allow private/LAN/loopback addresses (blocked by default; env VIDEODL_ALLOW_PRIVATE_URLS=1)')
   .action(async (rawUrl, options) => {
     try {
       const url = cleanUrl(rawUrl);
+      applyPrivateUrlPolicy(options);
+      await assertPublicUrl(url, { label: 'URL' });
       let cookies = null;
       if (options.cookies) {
         try {
@@ -1023,9 +1038,12 @@ program
   .option('-f, --format <format>', 'Output format')
   .option('--keep-original', 'Keep the original downloaded file')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format (like yt-dlp)')
+  .option('--allow-private-urls', 'Allow private/LAN/loopback addresses (blocked by default; env VIDEODL_ALLOW_PRIVATE_URLS=1)')
   .action(async (rawUrl, output, options) => {
     try {
       const url = cleanUrl(rawUrl);
+      applyPrivateUrlPolicy(options);
+      await assertPublicUrl(url, { label: 'URL' });
       let cookies = null;
       if (options.cookies) {
         try {
@@ -1191,10 +1209,66 @@ program
   });
 
 // Helper functions
+/** Shared title → filename sanitizer (letters, digits, underscores; ≤150 chars). */
+function sanitizeTitleForFilename(title) {
+  let name = String(title || '')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .trim() || 'video';
+  if (name.length > 150) name = name.substring(0, 150).replace(/_+$/, '');
+  return name;
+}
+
+/**
+ * Resolve a user-supplied -o value to a filename INSIDE `directory`.
+ *  - expands %(title)s, %(ext)s, %(id)s, %(extractor)s, %(quality)s (title sanitized;
+ *    the container's engine sends `<prefix>.%(title)s.%(ext)s`)
+ *  - appends the format extension when the name has none
+ *  - refuses absolute paths and anything that resolves outside `directory`
+ *    (before this, `-o ../x` escaped the download folder — CWE-22)
+ * Returns the filename relative to `directory` (sub-folders inside it are allowed).
+ */
+function resolveOutputFilename(output, ctx, directory) {
+  const fields = {
+    title: sanitizeTitleForFilename(ctx.title || 'video'),
+    ext: String(ctx.ext || 'mp4').replace(/^\./, ''),
+    id: String(ctx.id || '').replace(/[^\p{L}\p{N}_-]/gu, ''),
+    extractor: String(ctx.extractor || '').replace(/[^\p{L}\p{N}_-]/gu, ''),
+    quality: String(ctx.quality || '').replace(/[^\p{L}\p{N}_-]/gu, ''),
+  };
+  let name = String(output)
+    .replace(/%\((\w+)\)s/g, (m, key) => (key in fields ? fields[key] : m))
+    .replace(/[\r\n\0]/g, '')
+    .trim();
+  if (!name) throw new Error('Output filename (-o) is empty');
+  if (path.isAbsolute(name)) throw new Error(`Output filename "${output}" must be relative to the download directory`);
+
+  const dirAbs = path.resolve(directory || './downloads');
+  let full = path.resolve(dirAbs, name);
+  if (!path.extname(full)) full = `${full}.${fields.ext}`;
+  const rel = path.relative(dirAbs, full);
+  if (!rel || rel === '.' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Output filename "${output}" would escape the download directory ${dirAbs}`);
+  }
+  return rel;
+}
+
+/** Apply --allow-private-urls / VIDEODL_ALLOW_PRIVATE_URLS for this run (SSRF guard). */
+function applyPrivateUrlPolicy(options) {
+  const envAllow = /^(1|true|yes)$/i.test(process.env.VIDEODL_ALLOW_PRIVATE_URLS || '');
+  setPrivateUrlPolicy(!!(options && options.allowPrivateUrls) || envAllow);
+}
+
 function collectHeaders(value, previous) {
   const [name, ...valueParts] = value.split(':');
-  const headerValue = valueParts.join(':').trim();
-  return previous.concat([{ name: name.trim(), value: headerValue }]);
+  // CR/LF are stripped: header values are later joined with CRLF for ffmpeg, so a
+  // value containing them would inject extra headers.
+  const headerValue = valueParts.join(':').replace(/[\r\n]+/g, ' ').trim();
+  const headerName = name.replace(/[^A-Za-z0-9-]/g, '').trim();
+  if (!headerName) return previous;
+  return previous.concat([{ name: headerName, value: headerValue }]);
 }
 
 function formatDuration(seconds) {
@@ -1238,6 +1312,7 @@ program
   .command('extract <url>')
   .description('Extract video information and output as JSON (machine-readable)')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format')
+  .option('--allow-private-urls', 'Allow private/LAN/loopback addresses (blocked by default; env VIDEODL_ALLOW_PRIVATE_URLS=1)')
   .action(async (rawUrl, options) => {
     // Redirect ALL stdout writes to stderr so only jsonLine() output
     // (which uses fs.writeSync(1,…) — a direct fd write) reaches stdout.
@@ -1253,6 +1328,8 @@ program
     };
     try {
       const url = cleanUrl(rawUrl);
+      applyPrivateUrlPolicy(options);
+      await assertPublicUrl(url, { label: 'URL' });
       let cookies = null;
       if (options.cookies) {
         try {
@@ -1350,6 +1427,7 @@ program
   .option('--proxy <url>', 'Use proxy server')
   .option('--no-base-url', 'Do not add base domain to filename')
   .option('--cookies <file>', 'Cookie file in Netscape/Mozilla format')
+  .option('--allow-private-urls', 'Allow private/LAN/loopback addresses (blocked by default; env VIDEODL_ALLOW_PRIVATE_URLS=1)')
   .option('--no-subtitle', 'Do not download/embed subtitles')
   .option('--sub-lang <lang>', 'Subtitle language code')
   .option('--sub-translate <lang>', 'Auto-translate subtitles to this language code')
@@ -1363,6 +1441,8 @@ program
     };
     try {
       const url = cleanUrl(rawUrl);
+      applyPrivateUrlPolicy(options);
+      await assertPublicUrl(url, { label: 'URL' });
       let cookies = null;
       if (options.cookies) {
         try {
@@ -1439,12 +1519,17 @@ program
             }
 
             // Build filename for this entry
+            const ext = (entryFormatPair && entryFormatPair._hlsAudioUrls) ? 'mkv' : (entryFormatPair && entryFormatPair._hlsVideoUrl) ? 'mp4' : entryFormatPair ? entryFormatPair.ext : (entrySelectedFormat.ext || 'mp4');
             let entryFilename;
             if (options.output) {
-              entryFilename = options.output;
+              entryFilename = resolveOutputFilename(options.output, {
+                title: entryInfo.title, ext,
+                id: entryInfo.id || entryInfo.videoId,
+                extractor: entryInfo.extractor,
+                quality: entrySelectedFormat && entrySelectedFormat.quality,
+              }, playlistDir);
             } else {
               const baseName = sanitize(entryInfo.title);
-              const ext = (entryFormatPair && entryFormatPair._hlsAudioUrls) ? 'mkv' : (entryFormatPair && entryFormatPair._hlsVideoUrl) ? 'mp4' : entryFormatPair ? entryFormatPair.ext : (entrySelectedFormat.ext || 'mp4');
               if (options.baseUrl !== false) {
                 const domain = extractDomain(entryUrl);
                 entryFilename = domain ? `${baseName}-${domain}.${ext}` : `${baseName}.${ext}`;
@@ -1617,12 +1702,17 @@ program
       }
 
       // Build filename
+      const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv' : (formatPair && formatPair._hlsVideoUrl) ? 'mp4' : formatPair ? formatPair.ext : (selectedFormat.ext || 'mp4');
       let filename;
       if (options.output) {
-        filename = options.output;
+        filename = resolveOutputFilename(options.output, {
+          title: videoInfo.title, ext,
+          id: videoInfo.id || videoInfo.videoId,
+          extractor: videoInfo.extractor,
+          quality: selectedFormat && selectedFormat.quality,
+        }, options.directory);
       } else {
         const baseName = sanitize(videoInfo.title);
-        const ext = (formatPair && formatPair._hlsAudioUrls) ? 'mkv' : (formatPair && formatPair._hlsVideoUrl) ? 'mp4' : formatPair ? formatPair.ext : (selectedFormat.ext || 'mp4');
         if (options.baseUrl !== false) {
           const domain = extractDomain(url);
           filename = domain ? `${baseName}-${domain}.${ext}` : `${baseName}.${ext}`;
@@ -2259,4 +2349,13 @@ if (firstArg && !knownCommands.includes(firstArg) && /^https?:\/\//i.test(firstA
 }
 
 // Parse command
-program.parseAsync();
+if (process.argv[2] === SOLVE_SUBCOMMAND) {
+  // Sandboxed challenge-solver child (src/solver-sandbox.js): started by this very
+  // binary with Node's permission model on. It must not parse CLI options or touch
+  // the filesystem — everything it needs arrives on stdin.
+  import('./solver-host.js')
+    .then(m => m.runSolverHost())
+    .catch(err => { fs.writeSync(2, `solver host failed: ${err.message}\n`); process.exit(2); });
+} else {
+  program.parseAsync();
+}

@@ -42,7 +42,7 @@
  *     accepted only when they actually contain video objects.
  */
 
-import { BaseExtractor } from './base.js';
+import { BaseExtractor, hostMatches } from './base.js';
 import got from 'got';
 
 const USER_AGENT =
@@ -77,7 +77,9 @@ export class IndaplayExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /(^|[/.])(?:cms\.)?indaplay\.hu\//i.test(url);
+    // Hostname match (indaplay.hu and any subdomain such as cms.indaplay.hu) — a
+    // substring regex would also fire on e.g. https://example.com/indaplay.hu/.
+    return hostMatches(url, ['indaplay.hu']);
   }
 
   /**
@@ -306,8 +308,16 @@ export class IndaplayExtractor extends BaseExtractor {
       candidates.push(`${PORTAL}/hu/video/${channel}/${slug}`);
       candidates.push(`${PORTAL}/hu/embed/${channel}/${slug}`);
     }
+    // The caller's URL is often already the watch URL — don't fetch it twice.
+    const seenPages = new Set();
+    const uniqueCandidates = candidates.filter(u => {
+      const key = u.replace(/^https?:\/\/(?:www\.)?indaplay\.hu\/(?:hu\/)?/i, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+      if (seenPages.has(key)) return false;
+      seenPages.add(key);
+      return true;
+    });
 
-    for (const pageUrl of candidates) {
+    for (const pageUrl of uniqueCandidates) {
       const videos = await this._pageVideos(pageUrl);
       const hit = videos.find(v => v.slug === slug);
       if (hit) {
@@ -578,12 +588,14 @@ export class IndaplayExtractor extends BaseExtractor {
     // API unavailable (or gave nothing): fall back to the master playlist that the
     // portal page carried for this exact video.
     if (formats.length === 0) {
-      const masterUrl =
-        pageHit?.playlistUrl ||
-        `${CMS}/static/streaming-playlists/hls/${uuid}/master.m3u8`;
-      console.log(`[${this.name}] Falling back to page playlist: ${masterUrl}`);
-
-      const variants = await this._parseMaster(masterUrl, stdHeaders);
+      // Only the page-derived master is usable here: PeerTube names masters
+      // `<playlistUuid>-master.m3u8`, so nothing can be guessed from the video uuid.
+      const masterUrl = pageHit?.playlistUrl || null;
+      let variants = [];
+      if (masterUrl) {
+        console.log(`[${this.name}] Falling back to page playlist: ${masterUrl}`);
+        variants = await this._parseMaster(masterUrl, stdHeaders);
+      }
       for (const v of variants) {
         formats.push({
           url: v.url,

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { EventEmitter } from 'node:events';
 import { spawn, execFileSync } from 'node:child_process';
+import { assertPublicUrl, privateGuardHooks } from './url-guard.js';
 import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
@@ -49,6 +50,34 @@ export function uniqueFilepath(filepath) {
   return path.join(dir, `${base}_${n}${ext}`);
 }
 
+/**
+ * Turn an HLS playlist held in memory into a `data:` URI ffmpeg can open directly,
+ * making every URI in it absolute against `baseUrl` first.
+ *
+ * Why not a temp file: ffmpeg applies `-protocol_whitelist` to every nested open, so
+ * a local playlist input forces `file` into the whitelist — and then a *remote*
+ * playlist's segments may also be `file:///…` (local-file read, CVE-2016-1897/1898
+ * class). With `data:` the whitelist never needs `file` at all, and no temp file
+ * lands in the user's download folder.
+ */
+export function hlsPlaylistToDataUri(playlistText, baseUrl) {
+  const abs = (ref) => {
+    if (!ref || /^(https?:|data:)/i.test(ref)) return ref;
+    try { return new URL(ref, baseUrl).toString(); } catch { return ref; }
+  };
+  const lines = String(playlistText).split(/\r?\n/).map(line => {
+    const t = line.trim();
+    if (!t) return line;
+    if (t.startsWith('#')) {
+      // URI="…" attributes on #EXT-X-KEY / #EXT-X-MAP / #EXT-X-MEDIA etc.
+      return line.replace(/URI="([^"]*)"/g, (m, u) => `URI="${abs(u)}"`);
+    }
+    return abs(t);
+  });
+  const body = Buffer.from(lines.join('\n'), 'utf8').toString('base64');
+  return `data:application/vnd.apple.mpegurl;base64,${body}`;
+}
+
 export class VideoDownloader extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -80,6 +109,18 @@ export class VideoDownloader extends EventEmitter {
     // Check if this is an HLS stream
     const isHLS = options.url.includes('.m3u8') || options.protocol === 'hls';
     const isDASH = /\.mpd(\?|#|$)/i.test(options.url) || options.protocol === 'dash' || options.protocol === 'mpd';
+
+    // SSRF guard (src/url-guard.js): refuse private / loopback / link-local targets for
+    // the media URL and every alternate input this download would open. Redirects are
+    // re-checked by the got hook in _downloadStream; ffmpeg inputs are checked here.
+    for (const [label, u] of [
+      ['Media URL', options.url],
+      ['Fallback URL', options.fallbackUrl],
+      ['Audio URL', options.hlsAudioUrl],
+      ...((options.hlsAudioUrls || []).map(a => ['Audio URL', a && a.url])),
+    ]) {
+      if (u && !/^data:/i.test(u)) await assertPublicUrl(u, { label });
+    }
 
     // DRM pre-flight: for HLS/DASH manifests, detect DRM up front and stop with a
     // clear message rather than letting ffmpeg fail cryptically on ciphertext.
@@ -560,7 +601,8 @@ export class VideoDownloader extends EventEmitter {
 
     const reqBase = {
       https: { rejectUnauthorized: options.rejectUnauthorized !== false },
-      timeout: { lookup: 10000, connect: 10000, secureConnect: 10000, response: 30000 }
+      timeout: { lookup: 10000, connect: 10000, secureConnect: 10000, response: 30000 },
+      hooks: privateGuardHooks(),   // re-check every redirect target (SSRF guard)
     };
 
     // Always use Range header for the initial request.  Some CDNs (e.g.
@@ -612,6 +654,20 @@ export class VideoDownloader extends EventEmitter {
 
         stream.on('response', (resp) => {
           totalSize = parseInt(resp.headers['content-length'] || '0');
+
+          // Refuse an HTML page served where media was expected (login / age-gate /
+          // anti-bot interstitial, expired link). This is the root cause of the
+          // "video_N.mp4 is really a web page" bug — fail here instead of saving it.
+          const ctype = String(resp.headers['content-type'] || '').toLowerCase();
+          if (resp.statusCode < 400 && /^text\/html\b/.test(ctype)) {
+            httpError = new Error(
+              `Server returned an HTML page (${ctype}) instead of media — the URL is probably an interstitial or an expired link, not a video`
+            );
+            httpError.isHtmlPage = true;
+            stream.destroy();
+            done(httpError);
+            return;
+          }
           const acceptRanges = resp.headers['accept-ranges'];
           if (acceptRanges && acceptRanges !== 'none') rangeSupported = true;
 
@@ -1321,14 +1377,22 @@ export class VideoDownloader extends EventEmitter {
     }
 
     // If a filtered single-variant playlist was provided (e.g. Vimeo quality selection),
-    // write it to a temp file so ffmpeg downloads exactly the right variant.
+    // hand it to ffmpeg as an in-memory data: URI so it downloads exactly the right
+    // variant. (No temp file: see hlsPlaylistToDataUri — keeps `file` out of the
+    // protocol whitelist.)
     let hlsUrl = options.url;
-    let variantTempFile = null;
+    let variantTempFile = null; // retained for the cleanup path; never written any more
     if (options.hlsPlaylist) {
-      variantTempFile = path.join(directory, `.vdl_variant_${Date.now()}.m3u8`);
-      fs.writeFileSync(variantTempFile, options.hlsPlaylist, 'utf-8');
-      hlsUrl = variantTempFile;
-      console.log(`[HLS] Using filtered playlist for exact quality selection`);
+      const pl = String(options.hlsPlaylist).trim();
+      if (/^https?:\/\/\S+$/i.test(pl) && !pl.includes('#EXTM3U')) {
+        // Some extractors (yt-dlp fallback) hand over the variant playlist *URL*, not
+        // its text — use it directly instead of embedding a URL string as a playlist.
+        hlsUrl = pl;
+        console.log(`[HLS] Using variant playlist URL for exact quality selection`);
+      } else {
+        hlsUrl = hlsPlaylistToDataUri(pl, options.url);
+        console.log(`[HLS] Using filtered playlist (in-memory) for exact quality selection`);
+      }
     }
 
     // Check if the URL is an API endpoint that returns an m3u8 playlist or JSON
@@ -1392,12 +1456,9 @@ export class VideoDownloader extends EventEmitter {
             console.log(`[HLS] Playlist contains absolute URLs, can use API endpoint directly`);
             // Can use the API endpoint URL directly with ffmpeg
           } else {
-            console.log(`[HLS] Playlist contains relative URLs`);
-            // Need to save the playlist to a temp file and resolve base URL
-            const tempPlaylist = path.join(directory, '.temp_playlist.m3u8');
-            fs.writeFileSync(tempPlaylist, response.body);
-            hlsUrl = tempPlaylist;
-            console.log(`[HLS] Saved playlist to temp file: ${tempPlaylist}`);
+            console.log(`[HLS] Playlist contains relative URLs — resolving against the API URL`);
+            // Absolutise every reference and pass the playlist in-memory (data: URI).
+            hlsUrl = hlsPlaylistToDataUri(response.body, options.url);
           }
         } else {
           console.log(`[HLS] Response Content-Type: ${contentType}`);
@@ -1415,8 +1476,15 @@ export class VideoDownloader extends EventEmitter {
         '-progress', 'pipe:2'
       ];
       
+      // `-cookies` / `-headers` / `-user_agent` are options of ffmpeg's *http* protocol.
+      // They are applied to the top-level input; when that is an in-memory `data:`
+      // playlist ffmpeg reports "Option headers not found" and aborts (verified — and
+      // the old local-temp-file input failed the very same way), so they are only sent
+      // when the top-level input itself is an http(s) URL.
+      const isDataInput = /^data:/i.test(hlsUrl);
+
       // Add cookies for ffmpeg (must be before -i)
-      if (options.cookies && Array.isArray(options.cookies)) {
+      if (!isDataInput && options.cookies && Array.isArray(options.cookies)) {
         const ffmpegCookies = buildFfmpegCookieString(options.cookies, hlsUrl);
         if (ffmpegCookies) {
           args.push('-cookies', ffmpegCookies);
@@ -1424,13 +1492,16 @@ export class VideoDownloader extends EventEmitter {
       }
 
       // Add headers if provided (must be before -i)
-      if (options.formatHeaders) {
+      if (!isDataInput && options.formatHeaders) {
         // Combine all headers into a single string for -headers option
         const headerLines = [];
         for (const [key, value] of Object.entries(options.formatHeaders)) {
-          if (key !== 'User-Agent') {
-            headerLines.push(`${key}: ${value}`);
-          }
+          if (key === 'User-Agent') continue;
+          // Header-injection guard: ffmpeg takes ONE CRLF-joined string, so a value
+          // containing CR/LF would smuggle extra request headers.
+          const safeKey = String(key).replace(/[^A-Za-z0-9-]/g, '');
+          const safeValue = String(value).replace(/[\r\n]+/g, ' ').trim();
+          if (safeKey && safeValue) headerLines.push(`${safeKey}: ${safeValue}`);
         }
         
         if (headerLines.length > 0) {
@@ -1439,14 +1510,17 @@ export class VideoDownloader extends EventEmitter {
         
         // User-Agent has its own option
         if (options.formatHeaders['User-Agent']) {
-          args.push('-user_agent', options.formatHeaders['User-Agent']);
+          args.push('-user_agent', String(options.formatHeaders['User-Agent']).replace(/[\r\n]+/g, ' '));
         }
       }
       
-      // ffmpeg's HLS demuxer may restrict sub-resource protocols to
-      // file,crypto,data by default. Always whitelist the full set so
-      // remote segments / init sections (https) can be fetched.
-      args.push('-protocol_whitelist', 'file,http,https,tcp,tls,crypto,data');
+      // Whitelist the network protocols the HLS demuxer needs for segments / init
+      // sections / keys. SECURITY: `file` is deliberately NOT here. ffmpeg applies this
+      // list to every nested open, so allowing `file` on a remote playlist lets a
+      // malicious site make ffmpeg read local files (CVE-2016-1897/1898 class) — and
+      // in the container that is /config with every user's secrets. Local playlists
+      // are passed as data: URIs (hlsPlaylistToDataUri), so `file` is never needed.
+      args.push('-protocol_whitelist', 'http,https,tcp,tls,crypto,data');
 
       // Accept HLS segments regardless of their file extension. Many sites
       // obfuscate segment names (.html/.txt/.jpg for TS/fMP4 fragments), which
@@ -1456,6 +1530,13 @@ export class VideoDownloader extends EventEmitter {
       args.push('-allowed_extensions', 'ALL');
       if (ffmpegSupportsExtensionPicky(ffmpegPath)) {
         args.push('-extension_picky', '0');
+      }
+
+      // An in-memory playlist (data: URI) has no .m3u8 extension or HTTP MIME type for
+      // ffmpeg's format probe ("Not detecting m3u8/hls with non standard extension and
+      // non standard mime type"), so name the demuxer explicitly. Input option → next -i.
+      if (isDataInput) {
+        args.push('-f', 'hls');
       }
 
       // HLS pair: two or more separate inputs (video + audio variant playlists)

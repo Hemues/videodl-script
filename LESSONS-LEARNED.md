@@ -519,4 +519,52 @@ No DRM anywhere: zero `EXT-X-KEY`, and the instance sets `downloadEnabled: true`
 
 ---
 
-**Last update:** 2026-09-06
+## #18 — Security hardening 2026-09-13: the fixes and what they taught
+
+✅ Shipped as CLI 2.0.136 / container 2.0.137 (see `REVIEW-2026-09-13.md` for the findings).
+
+1. **ffmpeg's `-protocol_whitelist` is per *input* and applies to every nested open.**
+   `file` had been added so a locally written variant playlist could be an input; that
+   also let a *remote* playlist reference `file:///…` segments. The way out was not a
+   conditional whitelist but removing the local file entirely: the playlist is passed
+   as a `data:` URI (`hlsPlaylistToDataUri`), every reference absolutised first. Bonus:
+   no `.vdl_variant_*.m3u8` temp files in the user's download folder. Per-input scoping
+   also means the chapters-file input (a separate `-i`) still works without `file`.
+2. **A template nobody expands is a bug hiding as a feature.** The container sent
+   `-o '<prefix>.%(title)s.%(ext)s'`; the CLI used `-o` verbatim. Every custom-named
+   download was literally named `prefix.%(title)s.%(ext)s` for months, and `../` in
+   the prefix escaped the directory. Now `resolveOutputFilename` expands the template
+   and refuses anything that resolves outside `-d`. Test the *public entry point* with
+   the *exact* arguments another component sends (`instrument the tool, not a copy`).
+3. **Node's permission model works inside a SEA — via `NODE_OPTIONS`.** A SEA ignores
+   Node flags on its argv, but `NODE_OPTIONS=--permission` is honoured (verified:
+   `extractors` prints, `probe` gets `ERR_ACCESS_DENIED`). That made the solver
+   sandbox a child of the *same binary* (`__solve`), no extra runtime. Two traps:
+   (a) from **source**, module loading itself is subject to the fs permission — the
+   child needs `--allow-fs-read=<project>`; (b) the grant is matched against the
+   **drive-letter form of the entry path, case-sensitively** — probed on the Samba
+   share: `Z:\…` passes, `z:\…` fails, and every UNC / `realpath` form
+   (`\\server\share\…`, `\\?\UNC\…`) is denied even though the *denial message* prints
+   the UNC path. Derive the grant from `argv[1]` with `path.resolve` (never realpath),
+   and in Python use `os.path.abspath`, not `Path.resolve()` (which silently rewrites a
+   mapped drive to UNC). The SEA needs no grant at all.
+4. **`subprocess.run(text=True)` on Windows decodes with cp1252** — the CLI's UTF-8
+   arrows/emoji raised inside the reader thread and left `stdout=None`, which then
+   surfaced as an unrelated `TypeError` in the harness. Always `encoding='utf-8',
+   errors='replace'` for tool output.
+5. **Substring `canHandle()` regexes route the wrong extractor.** Match the hostname
+   (`hostMatches()` in `base.js`). ~20 extractors still use the old pattern — migrate
+   as they are touched.
+6. **Reproducibility is a security control, not a nicety.** With the lockfile ignored,
+   Node = "whatever the host has", ffmpeg = BtbN `latest`, and `pip install yt-dlp`
+   unpinned, a "rebuild for yt-dlp" changed four other things silently. Pins + hashes
+   (`build-pins.json`, `ejs.lock.json`, `requirements.txt --hash`) make the automated
+   update pipeline's one-pin-per-run promise real.
+7. **The gate must run the artefact that ships.** `tests/smoke.py --image <candidate>`
+   runs the binary *inside the image*, `--deployed` runs it inside the live container.
+   A green run from source proves the code; only a green run of the image proves the
+   release.
+
+---
+
+**Last update:** 2026-09-13

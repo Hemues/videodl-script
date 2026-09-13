@@ -24,7 +24,7 @@
  *   https://indaplay.hu/hu/csatornak/indaevents
  */
 
-import { BaseExtractor } from './base.js';
+import { BaseExtractor, hostMatches } from './base.js';
 import got from 'got';
 import { IndaplayExtractor } from './indaplay.js';
 import { YouTubeExtractor } from './youtube.js';
@@ -49,7 +49,7 @@ export class IndaEventsExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /indaevents\.hu\//i.test(url);
+    return hostMatches(url, ['indaevents.hu']);
   }
 
   _decodeHtmlEntities(text) {

@@ -1,0 +1,7 @@
+{
+  "_comment": "Provenance of src/vendor/yt.solver.core.js. `tag` is the yt-dlp/ejs release the file was taken from; `sha256` is of the upstream release asset bytes (LF line endings). compile.sh refuses to build when the vendored file does not hash to this value. update-from-upstream.sh rewrites both fields when it adopts a newer release.",
+  "repo": "yt-dlp/ejs",
+  "asset": "yt.solver.core.js",
+  "tag": "0.8.0",
+  "sha256": "ca259e4e3cdd37d92fc266d9af08d4fd66da8479e240f4d984f29da402c22ead"
+}

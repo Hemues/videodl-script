@@ -1,0 +1,22 @@
+{
+  "_comment": "Pinned, checksum-verified build inputs. build.mjs refuses to use an archive whose sha256 differs. Bump deliberately (update-from-upstream.sh or by hand), never implicitly. Node: sha256 from https://nodejs.org/dist/v<ver>/SHASUMS256.txt. ffmpeg: BtbN dated autobuild tag + its checksums.sha256 (master-branch 'N-' builds, same lineage videodl has always shipped).",
+  "node": {
+    "version": "22.22.2",
+    "sha256": {
+      "linux-x64":   "88fd1ce767091fd8d4a99fdb2356e98c819f93f3b1f8663853a2dee9b438068a",
+      "linux-arm64": "e9e1930fd321a470e29bb68f30318bf58e3ecb4acb4f1533fb19c58328a091fe",
+      "win-x64":     "7c93e9d92bf68c07182b471aa187e35ee6cd08ef0f24ab060dfff605fcc1c57c",
+      "win-x86":     "ca892f829a733109e341c43585fd2094177e9d2f2c45f97c7ed3cf329d5427c5"
+    }
+  },
+  "ffmpeg": {
+    "repo": "BtbN/FFmpeg-Builds",
+    "tag": "autobuild-2026-09-12-13-12",
+    "assets": {
+      "linux-x64":   { "name": "ffmpeg-N-126523-g884590dd4a-linux64-gpl.tar.xz",    "sha256": "2ff53a392171d821276a7ac9f02ade666bee565ff5d3cb6460414cb35561c66a" },
+      "linux-arm64": { "name": "ffmpeg-N-126523-g884590dd4a-linuxarm64-gpl.tar.xz", "sha256": "fb009fa1912e7b88f203411a9f90faec8c02a03dafb1373d7d68a27f29ddf8d2" },
+      "win-x64":     { "name": "ffmpeg-N-126523-g884590dd4a-win64-gpl.zip",         "sha256": "e9270cbe3f10eafbff5963f5e7c6b7e24be518e9734776571f64360428a2d134" }
+    },
+    "_note": "No 32-bit Windows ffmpeg exists upstream any more, so win-x86 only gets the plain (ffmpeg-on-first-use) binary."
+  }
+}

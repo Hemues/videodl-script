@@ -22,6 +22,7 @@ import fs from 'fs';
 import path from 'path';
 import { buildCookieHeader, getCookiesForUrl } from '../cookies.js';
 import { getSolverCode } from '../solver-loader.js';
+import { solveChallenges } from '../solver-sandbox.js';
 
 // Browser-like headers for YouTube page requests
 const YT_HEADERS = {
@@ -701,9 +702,9 @@ export class YouTubeExtractor extends BaseExtractor {
   // ========== Challenge Solving ==========
 
   async _solveAllChallenges(playerUrl, playerJS, sigLengths, nValues) {
-    const solver = await this._loadSolver();
-    if (!solver) throw new Error('Failed to load challenge solver');
-
+    // The solver runs YouTube's player code. It is executed in a sandboxed child
+    // process (Node --permission: no fs / child_process / workers) — see
+    // src/solver-sandbox.js — never in this process.
     const cache = this._playerCache.get(playerUrl);
     const requests = [];
 
@@ -726,11 +727,11 @@ export class YouTubeExtractor extends BaseExtractor {
 
     console.log(`[${this.name}] Solving ${uncachedSigLengths.length} sig + ${uncachedNValues.length} n challenges...`);
 
+    // Runs in a sandboxed child process (Node --permission) — see solver-sandbox.js.
     let result;
     try {
-      result = solver({ type: 'player', player: playerJS, requests });
+      result = await solveChallenges(playerJS, requests, { log: (m) => console.log(`[${this.name}] ${m}`) });
     } catch (solverErr) {
-      // Solver may throw raw strings, not Error objects
       const msg = solverErr instanceof Error ? solverErr.message : String(solverErr);
       throw new Error(`Challenge solver failed: ${msg}`);
     }

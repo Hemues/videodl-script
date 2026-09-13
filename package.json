@@ -1,6 +1,6 @@
 {
   "name": "videodl-cli",
-  "version": "2.0.130",
+  "version": "2.0.134",
   "description": "A CLI video downloader and converter inspired by Video DownloadHelper - similar to yt-dlp",
   "main": "src/index.js",
   "type": "module",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/cli.js",
-    "test": "node test/test.js",
+    "test": "python3 tests/smoke.py --source",
     "build": "node build.mjs",
     "build:linux": "node build.mjs --linux",
     "build:windows": "node build.mjs --windows"

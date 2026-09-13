@@ -23,6 +23,30 @@ A powerful CLI video downloader and converter with **47 built-in site extractors
 - **Programmatic API** — import as an ES module for integration into other projects
 - **Smart filenames** — auto-adds source domain to filenames (e.g., `video-youtube.com.mp4`)
 
+## Security
+
+videodl fetches whatever URL it is given and runs code from the sites it downloads
+from, so a few guards are on by default (details: `REVIEW-2026-09-13.md`,
+`LESSONS-LEARNED.md #18`):
+
+- **Private-network guard (SSRF).** URLs whose host is loopback, RFC1918, link-local,
+  CGNAT, multicast, `localhost` / `*.local` / `*.internal`, or that *resolve* to such an
+  address, are refused — for the input URL, every media URL and every redirect. Only
+  `http`/`https` schemes are accepted. Downloading from your own NAS on the LAN?
+  Pass `--allow-private-urls` (or set `VIDEODL_ALLOW_PRIVATE_URLS=1`).
+- **Output filenames stay inside `-d`.** `-o` may use `%(title)s`, `%(ext)s`, `%(id)s`,
+  `%(extractor)s`, `%(quality)s` and sub-folders, but never `..` or absolute paths.
+- **Sandboxed YouTube challenge solver.** The solver executes YouTube's player
+  JavaScript; it runs in a child process of the same binary under Node's permission
+  model (no filesystem, no child processes, no workers). `VIDEODL_SOLVER_UNSANDBOXED=1`
+  disables this for debugging only and warns loudly.
+- **ffmpeg never gets `file:` in its protocol whitelist**, so a malicious HLS playlist
+  cannot make it read local files; in-memory playlists are passed as `data:` URIs.
+- **TLS is verified everywhere**, including the yt-dlp fallback; `--no-ssl-verify`
+  disables it explicitly and only then.
+- **Reproducible binaries**: Node.js, ffmpeg, the solver and every npm dependency are
+  pinned with sha256 (`BUILD.md`), and each release ships `SHA256SUMS`.
+
 ## Supported Sites
 
 | Site | URL | Notes |
@@ -153,12 +177,14 @@ Compiled binaries are published as GitHub Release assets (not tracked in git):
 
 | Asset | Description |
 |-------|-------------|
-| `videodl.exe` | Windows x64 binary (downloads ffmpeg on first use) |
-| `videodl-linux` | Linux x64 binary (downloads ffmpeg on first use) |
-| `videodl-ffmpeg.exe` | Windows standalone with embedded ffmpeg |
-| `videodl-ffmpeg-linux` | Linux standalone with embedded ffmpeg |
-| `videodl.cjs` | Bundled Node.js script (requires Node.js 20+) |
-| `index.exe` / `index` / `cycletls-index-linux` | CycleTLS TLS-fingerprint helper binaries |
+| `videodl-linux` / `videodl-ffmpeg-linux` | Linux x64 — plain (downloads ffmpeg on first use) / ffmpeg embedded |
+| `videodl-linux-arm64` / `videodl-ffmpeg-linux-arm64` | Linux arm64 — plain / ffmpeg embedded |
+| `videodl.exe` / `videodl-ffmpeg.exe` | Windows x64 — plain / ffmpeg embedded |
+| `videodl-x86.exe` | Windows 32-bit — plain only (no 32-bit ffmpeg or CycleTLS helper exist upstream) |
+| `cycletls-index-linux` / `cycletls-index-linux-arm64` / `cycletls-index-windows.exe` | CycleTLS TLS-fingerprint helper — place it next to the binary as `index` / `index-arm64` / `index.exe` |
+| `SHA256SUMS` | sha256 of every asset above — verify your download: `sha256sum -c --ignore-missing SHA256SUMS` |
+
+All binaries are cross-built from one pinned Node.js + ffmpeg (see [BUILD.md](BUILD.md)).
 
 Download from: **https://github.com/Hemues/videodl-script/releases**
 
