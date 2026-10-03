@@ -609,9 +609,15 @@ H.264 + AAC, full duration). HLS stays first in the list, so it still wins at eq
 whenever its CDN answers.
 
 **Notes for next time.**
-- The mp4 URL carries a per-quality throttle (`rate=500k` at 240p, `rate=50000k` at
-  1080p), the client IP (`ip=`), and needs `Referer` (404 without it). The extractor's
-  format headers already send it.
+- The mp4 URLs carry a per-quality throttle: **240p/480p/720p `rate=500k`, 1080p
+  `rate=50000k`** (same on every probe). The cap is **per connection**: 0.65 MB/s on one
+  connection, 4.9 MB/s with 8 parallel ranges. So `best` (the container's default) is
+  fast, but an explicit 720p on a page that drew `hv-h` takes about as long as the video
+  plays (16-min video, 432 MB, ~14 min). The downloader's chunked mode is sequential,
+  so it does not help here. If this matters, add opt-in parallel ranges to
+  `_downloadStream` rather than turning them on for every site (YouTube).
+- The mp4 URLs also carry the client IP (`ip=`) and need `Referer` (404 without it). The
+  extractor's format headers already send it.
 - Rewriting `hv-h` → `ev-h` in the URL returned 200 for the master playlist in one probe.
   That is not documented behaviour, so it is not used.
 - Debug recipe: fetch the page, print `mediaDefinitions`, then request each URL with
