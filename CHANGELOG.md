@@ -4,6 +4,18 @@ All notable changes to videodl-cli will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (CLI 2.0.139, 2026-10-03)
+- **PornHub: "Found 0 formats" / HLS `410 Gone`.** PornHub now hands out its HLS
+  master playlists on one of two CDNs per page load: `ev-h.phncdn.com`
+  (`validfrom/hash`, works) or `hv-h.phncdn.com` (`h/e/f`, behind Cloudflare, answers
+  `410 Gone` to non-browser clients — retrying the same URL never helps). The mp4
+  fallback (`/video/get_media`) silently returned `[]` because the extractor did not
+  keep the watch page's session cookies. The extractor now uses one cookie jar for the
+  page, HLS and `get_media` requests, so the progressive mp4s (240p–1080p) are always
+  found; HLS is still preferred at equal height when its CDN answers. mp4 formats have
+  their own `format_id` (`1080p-mp4`), and `canHandle()` matches the hostname
+  (`hostMatches`). `LESSONS-LEARNED.md #19`.
+
 ### Security
 Fixes for the findings in `REVIEW-2026-09-13.md` (all items verified with the new
 `tests/smoke.py` gate before release):

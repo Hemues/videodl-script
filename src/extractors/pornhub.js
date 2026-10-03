@@ -3,8 +3,9 @@
  * Extracts video URLs from pornhub.com
  */
 
-import { BaseExtractor } from './base.js';
+import { BaseExtractor, hostMatches } from './base.js';
 import got from 'got';
+import { CookieJar } from 'tough-cookie';
 
 export class PornHubExtractor extends BaseExtractor {
   constructor() {
@@ -13,15 +14,21 @@ export class PornHubExtractor extends BaseExtractor {
   }
 
   static canHandle(url) {
-    return /pornhub\.com/i.test(url);
+    return hostMatches(url, ['pornhub.com']);
   }
 
   async extract(url, options = {}) {
     try {
       console.log(`[${this.name}] Extracting from: ${url}`);
 
+      // One cookie jar for the whole extraction: the `get_media` endpoint behind the
+      // mp4 media definition answers `[]` unless it sees the session cookies the
+      // watch page just set (ss, __s, __l, ...).
+      const cookieJar = new CookieJar();
+
       // Fetch the webpage with proper headers
       const response = await got(url, {
+        cookieJar,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -122,8 +129,13 @@ export class PornHubExtractor extends BaseExtractor {
               
               if (media.videoUrl && media.format === 'hls') {
                 // HLS format - fetch and parse the master playlist
+                // PornHub picks the HLS CDN per page load: ev-h.phncdn.com
+                // (validfrom/hash) works, hv-h.phncdn.com (h/e/f, behind Cloudflare)
+                // answers 410 Gone to non-browser clients. Retrying the same URL never
+                // helps; the mp4 definition below still yields the same qualities.
                 try {
                   const mediaResponse = await got(media.videoUrl, {
+                    cookieJar,
                     headers: standardHeaders,
                     timeout: { request: 10000 }
                   });
@@ -168,29 +180,33 @@ export class PornHubExtractor extends BaseExtractor {
                     });
                   }
                 } catch (e) {
-                  console.log(`[${this.name}] Failed to parse HLS playlist: ${e.message}`);
+                  console.log(`[${this.name}] HLS playlist unavailable (${media.quality}p): ${e.message.split(':')[0]}`);
                 }
               } else if (media.videoUrl && media.format === 'mp4') {
-                // MP4 format - try to parse as JSON
+                // MP4 format - `get_media` returns a JSON list of progressive mp4s
                 try {
                   const mediaResponse = await got(media.videoUrl, {
+                    cookieJar,
                     headers: standardHeaders,
                     timeout: { request: 10000 }
                   });
                   const mediaData = JSON.parse(mediaResponse.body);
-                  
+
+                  if (Array.isArray(mediaData) && mediaData.length === 0) {
+                    console.log(`[${this.name}] MP4 media definition returned no entries`);
+                  }
                   if (Array.isArray(mediaData)) {
                     for (const item of mediaData) {
                       if (item.quality && item.videoUrl) {
-                        const quality = item.quality.includes('p') ? item.quality : `${item.quality}p`;
-                        const height = this.parseResolution(quality);
-                        const width = Math.round(height * 16 / 9); // Assume 16:9 aspect ratio
+                        const quality = String(item.quality).includes('p') ? String(item.quality) : `${item.quality}p`;
+                        const height = parseInt(item.height) || this.parseResolution(quality);
+                        const width = parseInt(item.width) || Math.round(height * 16 / 9); // Assume 16:9 aspect ratio
                         formats.push({
                           quality,
                           url: item.videoUrl,
                           width,
                           height,
-                          format_id: quality,
+                          format_id: `${quality}-mp4`,
                           ext: 'mp4',
                           protocol: 'https',
                           headers: standardHeaders

@@ -46,6 +46,14 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   names/uids, updater script paths or other home-lab specifics — they belong in
   `/etc/videodl-upstream.env` on the host or in the private container repo's docs.
 
+## Extractor gotchas
+- **PornHub (2.0.139):** HLS masters come from `ev-h` (works) or `hv-h.phncdn.com`
+  (Cloudflare, `410 Gone` to non-browsers), chosen per page load; `get_media` returns
+  `[]` without the watch page's cookies. Keep the shared `CookieJar` in
+  `pornhub.js`; the mp4 list is the dependable path. `LESSONS-LEARNED.md #19`.
+- An endpoint that answers 200 with an empty list usually means missing session state
+  (cookies from the page fetch), not a site redesign. Check that before rewriting parsers.
+
 ## Work Safely
 - Do not commit cookies, tokens, captcha keys, account credentials, or captured request headers.
 - Treat extractor fixes as site-specific protocol work. Prefer small adapters and fixtures over broad rewrites.

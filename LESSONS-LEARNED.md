@@ -25,6 +25,9 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 14. [YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)](#14--youtube-403--client-table--gvs-po-tokens-phase-2-deferred)
 15. [HentaiHaven — Cloudflare managed challenge (curl only) & obfuscated HLS segments](#15--hentaihaven--cloudflare-managed-challenge-curl-only--obfuscated-hls-segments)
 16. [DRM detection — refuse cleanly, never circumvent; don't flag plain AES-128](#16--drm-detection--refuse-cleanly-never-circumvent-dont-flag-plain-aes-128)
+17. [IndaPlay/IndaEvents — find the *host*, and never trust a 200 or a page's first video](#17--indaplayindaevents--find-the-host-and-never-trust-a-200-or-a-pages-first-video)
+18. [Security hardening 2026-09-13: the fixes and what they taught](#18--security-hardening-2026-09-13-the-fixes-and-what-they-taught)
+19. [PornHub — two HLS CDNs per page load, and `get_media` needs the session cookies](#19--pornhub--two-hls-cdns-per-page-load-and-get_media-needs-the-session-cookies)
 
 ---
 
@@ -579,6 +582,42 @@ CLI 2.0.136 was published but **superseded the same day** — see item 8.
    ffmpeg was invisible and the embedded one was used. Same binary, different
    environment, different result — test in the environment that ships (7.).
 
+## #19 — PornHub — two HLS CDNs per page load, and `get_media` needs the session cookies
+
+✅ Fixed in CLI 2.0.139 (2026-10-03).
+
+**Symptom.** `[PornHub] Failed to parse HLS playlist: … 410 (Gone): GET https://hv-h.phncdn.com/hls/…/master.m3u8?h=…&e=…&f=1`
+for every quality, then `Found 0 formats`. The failure was intermittent: about two page
+loads in three failed, the third worked.
+
+**What was going on — two independent problems that only hurt together.**
+1. The watch page's `flashvars.mediaDefinitions` HLS URLs come from **one of two CDNs,
+   picked per page load**: `ev-h.phncdn.com/…?validfrom=…&validto=…&hash=…` (works with any
+   client) or `hv-h.phncdn.com/…?h=…&e=…&f=1` (Cloudflare, answers `410 Gone` with a
+   1-byte body to Node/`got`, with or without browser headers, `Referer`, `Origin` or
+   the `__cf_bm` cookie). All qualities of one page load share the CDN. **Retrying the
+   same URL never recovers**; only a new page load can draw the other CDN.
+2. The `format: "mp4"` definition points at `/video/get_media?s=…`, which returns the
+   progressive mp4 list (`ev.phncdn.com/videos/…?validfrom=…&rate=…&ip=…&hash=…`).
+   **Without the cookies the watch page sets (`ss`, `__s`, `__l`, …) it answers 200
+   with `[]`**, so the fallback produced nothing and logged nothing. yt-dlp never hit
+   this because its session cookie jar is implicit.
+
+**Fix.** One `tough-cookie` `CookieJar` per extraction, shared by the page, HLS and
+`get_media` requests. The mp4 path now always yields 240p–1080p (verified: 1080p 535 MB,
+H.264 + AAC, full duration). HLS stays first in the list, so it still wins at equal height
+whenever its CDN answers.
+
+**Notes for next time.**
+- The mp4 URL carries a per-quality throttle (`rate=500k` at 240p, `rate=50000k` at
+  1080p), the client IP (`ip=`), and needs `Referer` (404 without it). The extractor's
+  format headers already send it.
+- Rewriting `hv-h` → `ev-h` in the URL returned 200 for the master playlist in one probe.
+  That is not documented behaviour, so it is not used.
+- Debug recipe: fetch the page, print `mediaDefinitions`, then request each URL with
+  `throwHttpErrors: false`. A page-level `[]` from an endpoint that "works" means
+  missing session state, not a site change.
+
 ---
 
-**Last update:** 2026-09-13
+**Last update:** 2026-10-03
