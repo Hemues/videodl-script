@@ -2,6 +2,8 @@
 
 A powerful CLI video downloader and converter with **47 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
 
+**Current version: 2.0.139** (`package.json`; the `CHANGELOG.md` top entry; last git tag `v2.0.99`, so tags lag). **Start here:** this README, `AGENTS.md`, `LESSONS-LEARNED.md` (numbered postmortems), `CHANGELOG.md`. The container image around this CLI is built from the sibling repo `containers/videodl-container` (its `build.sh`), not from here.
+
 ## Features
 
 - **45 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more

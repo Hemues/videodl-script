@@ -2,7 +2,9 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
-## [Unreleased]
+## [2.0.139] - 2026-10-03
+
+(`package.json` 2.0.139; this block was headed `[Unreleased]` until the 2026-10-13 docs audit. No `v2.0.139` git tag exists.)
 
 ### Fixed (CLI 2.0.139, 2026-10-03)
 - **PornHub: "Found 0 formats" / HLS `410 Gone`.** PornHub now hands out its HLS
