@@ -16,6 +16,8 @@ It is NOT a DRM circumvention tool (it detects DRM and refuses it), NOT a site-l
 6. `STORYLINE.md`: the development story by phase, from the first commit on 2026-02-25 to the documentation pass of 2026-10-31.
 7. `REVIEW-2026-09-13.md`: the code and security review that produced release 2.0.137 and the hardening of 2.0.139.
 
+Install: `docs/HOWTO-USE.md` section 3 (from source on Linux, macOS or Windows, or the standalone binary). Upgrade: section 6 of the same file. The CLI has no self-update: an upgrade is a `git pull` and `npm install` in a checkout, or a new release binary whose sha256 is checked against `SHA256SUMS`. History: `STORYLINE.md` (the phases) and `CHANGELOG.md` (the versions). Never: commit cookies, logins, keys or tokens; push from a Windows share; edit the mirror clone of the two-clone rule (`AGENTS.md`); fetch a private-network URL unless `--allow-private-urls` is given on purpose.
+
 ## What it is
 
 videodl-cli is a Node.js ES module with a `commander` command line front end (`src/cli.js`). It turns a page URL into a list of media formats through a site extractor, chooses a format, downloads it (direct HTTP, HLS through ffmpeg, DASH merge through ffmpeg, or through the CycleTLS helper for Cloudflare-protected CDNs), handles subtitles and chapters, and optionally converts the result.
@@ -114,7 +116,7 @@ The table is the README copy of the support list. The 47 native extractors are l
 |------|-------|-------------|
 | CLI version | 2.0.139 (2026-10-03) | `package.json`, `CHANGELOG.md` top entry |
 | Git tag | `v2.0.139` on 2026-10-03; 77 tags in total | `git tag` (the README used to say "last tag v2.0.99", outdated since 2026-10-03: tags v2.0.134, v2.0.136, v2.0.137 and v2.0.139 exist) |
-| HEAD | `7ff739d` (2026-10-14), the CRLF restore after the audit commit `28946a3` | `git log -1` |
+| HEAD | `4ade70b` (2026-10-31 21:07 CET), the 2026-10-31 fleet audit commit, committed and pushed (the previous HEAD was `7ff739d`, 2026-10-14, the CRLF restore after `28946a3`) | `git log -1` |
 | GitHub release assets | per release: `videodl-linux`, `videodl-ffmpeg-linux`, `videodl.exe`, `videodl-ffmpeg.exe`, `videodl-x86.exe`, the CycleTLS helpers, `SHA256SUMS`, `videodl.cjs` | the release page (not checked in the 2026-10-31 pass) |
 | Container image | built by the sibling repository `videodl-container` (its `build.sh`), not by this repository | that repository's README |
 | Node.js used to build | v22.22.2 (pinned in `build-pins.json`) | `build-pins.json` |
@@ -308,7 +310,7 @@ Owner rules that apply here: uploads (git push, release creation) are made on th
 
 - **Subtitle default.** The code default is no subtitles (`DEFAULT_SUB_LANGS = []`, since commit `dbcea2e`, 2026-04-25). The help text partly says English and Hungarian is the default, and the old README did too. The owner must decide which is right; then the code, the help and the README are made to agree. LESSONS #21.
 - **A tracked symlink.** `.compile.unix.sh` is a symlink (mode 120000) to `/tmp/compile.unix.sh`, committed by `41e066b` (2026-07-21). It should be removed in its own commit. LESSONS #23.
-- **Executable bits.** Every tracked file is mode 100755 at HEAD, after mode-only commits in 2026-03, 2026-04 and 2026-07. A Windows checkout needs `git config core.fileMode false` to show the truth. LESSONS #24.
+- **Executable bits.** Mode-only commits in 2026-03, 2026-04 and 2026-07 flipped the modes of most tracked files to 100755. Corrected 2026-10-31: "every tracked file is 100755" was already wrong at `7ff739d` (three files were 100644); at `4ade70b` 110 tracked files are 100755 and 5 are 100644 (`package-lock.json`, `src/drm-detect.js`, `src/extractors/hentaihaven.js`, `STORYLINE.md`, `docs/HOWTO-USE.md`, the last two created by the audit). A Windows checkout needs `git config core.fileMode false` to show the truth. LESSONS #24.
 - **Old commits still contain the home-lab text** that commit `f9d8706` removed from the current tree. A history rewrite is an owner option, not an agent action. LESSONS #22.
 - **CHANGELOG dates.** The 2.0.10 heading says 2026-07-17 and 2.0.30 says 2026-03-21, while the git dates are in March. LESSONS #30.
 - **Outdated statements kept for the record.** "By default, English + Hungarian subtitles are downloaded" (outdated since 2026-04-25, commit `dbcea2e`: the default is none, pending the owner decision above). "45 site extractors" in the feature list (outdated since 2026-10-31: the registry has 47 native extractors). "last git tag v2.0.99" (outdated since 2026-10-03: see the version table). "update-from-ytdlp.sh" (outdated since 2026-09-13, commit `2b16a56`: the file is `update-from-upstream.sh`).

@@ -17,9 +17,9 @@ Companion documents:
 
 Facts about the repository, checked on 2026-10-31 (CET):
 
-- 90 commits on the `main` branch, first commit 2026-02-25, last commit
-  2026-10-14 (`7ff739d`).
-- 114 tracked files at HEAD.
+- 91 commits on the `main` branch, first commit 2026-02-25, last commit
+  2026-10-31 (`4ade70b`, the audit commit; 90 commits before it, the last of them `7ff739d` of 2026-10-14).
+- 116 tracked files at HEAD (114 before the audit commit, plus `STORYLINE.md` and `docs/HOWTO-USE.md`).
 - `package.json` version 2.0.139, `CHANGELOG.md` top entry 2.0.139 (2026-10-03).
 - 77 git tags. The newest tags are `v2.0.134` (2026-09-06), `v2.0.136` and
   `v2.0.137` (2026-09-13) and `v2.0.139` (2026-10-03).
@@ -673,14 +673,13 @@ with Node v22.22.2. The Linux-side `git status` showed one untracked directory
 and no other change. The smoke gate (`python3 tests/smoke.py --source`) needs the
 network and was not run in this pass.
 
-**What was not done.** The commits were not made in this pass. No file was
-pushed. No release was tagged. The history was not rewritten. The subtitle
+**What was not done.** The commits were not made in this pass. (Outdated since 2026-10-31 21:07 CET: the audit was committed as `4ade70b` and pushed to GitHub.) No file was pushed in this pass. No release was tagged. The history was not rewritten. The subtitle
 default and the symlink were left for the owner.
 
 ## Where it stands now (2026-10-31, CET)
 
 - Version 2.0.139 in `package.json`, the CHANGELOG top entry and the CLI output.
-- HEAD `7ff739d`, tag `v2.0.139` on 2026-10-03, 77 tags in total.
+- HEAD `4ade70b` (2026-10-31 21:07 CET, pushed), tag `v2.0.139` on 2026-10-03, 77 tags in total.
 - The container image around this CLI is built by the separate container
   repository. The image state is recorded there, not here.
 - Open owner decisions and known gaps:
@@ -689,7 +688,7 @@ default and the symlink were left for the owner.
      match (LESSONS #21).
   2. The symlink `.compile.unix.sh` (mode 120000 to `/tmp/compile.unix.sh`) is
      still tracked. Remove it in its own commit (LESSONS #23).
-  3. Mode bits: every tracked file is 100755 at HEAD. Decide whether that is
+  3. Mode bits: 110 tracked files are 100755 and 5 are 100644 at HEAD (the earlier wording "every tracked file is 100755" was already wrong at `7ff739d`). Decide whether that is
      wanted; the Windows side needs `core.fileMode=false` to show the truth
      (LESSONS #24).
   4. Old commits still carry the home-lab text removed on 2026-09-13. A history

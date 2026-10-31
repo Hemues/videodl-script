@@ -1,9 +1,9 @@
 # VideoDL Script — Lessons Learned
 
 Reference for developing and maintaining the VideoDL CLI video downloader
-(Node.js, 35+ native extractors, yt-dlp fallback).
+(Node.js, 35+ native extractors (outdated since 2026-10-31: 47 native extractors), yt-dlp fallback).
 
-Entries marked ✅ are verified in production. Entries marked ⏳ are pending verification.
+Entries marked [OK] are verified in production. Entries marked [OPEN] are pending verification.
 
 ---
 
@@ -62,7 +62,7 @@ structures without notice. Plan for extractors to need regular updates.
 
 ## #1 — Site Extractors Break Frequently
 
-**Status:** ✅ VERIFIED (multiple commits: "add new site", "some minor fixes")
+**Status:** [OK] VERIFIED (multiple commits: "add new site", "some minor fixes")
 
 **Symptom:**
 Previously working downloads fail with "no formats found" or HTTP 403 errors.
@@ -80,7 +80,7 @@ breakages.
 
 ## #2 — CycleTLS for Cloudflare Bypass
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 Downloads from Cloudflare-protected sites fail with 403 or challenge pages.
@@ -101,7 +101,7 @@ User-Agent headers. A native Go TLS implementation is needed to impersonate brow
 
 ## #3 — HLS Stream Stitching Edge Cases
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 Downloaded video has gaps, audio desync, or missing segments.
@@ -122,7 +122,7 @@ Dedicated HLS downloader handles:
 
 ## #4 — Standalone Binary Compilation with pkg
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 Compiled binary crashes on target systems or is excessively large.
@@ -141,7 +141,7 @@ is distributed separately, not bundled inside the pkg binary.
 
 ## #5 — YouTube Premium Bitrate Upgrade
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 YouTube downloads are capped at 128kbps audio despite Premium account.
@@ -159,7 +159,7 @@ the higher bitrate format IDs.
 
 ## #6 — Cookie Extraction via Puppeteer
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 Auth-required downloads fail even after the user logs in via browser.
@@ -177,7 +177,7 @@ reused for subsequent downloads.
 
 ## #7 — xHamster HLS Download Stuck — No Progress Events
 
-**Status:** ✅ VERIFIED (commit 916a316)
+**Status:** [OK] VERIFIED (commit 916a316)
 
 **Symptom:**
 xHamster downloads start but show 0% progress forever, then eventually timeout.
@@ -195,7 +195,7 @@ extractor.
 
 ## #8 — Dailymotion Quality Label Mismatch
 
-**Status:** ✅ VERIFIED (commit b4e75d5)
+**Status:** [OK] VERIFIED (commit b4e75d5)
 
 **Symptom:**
 Selecting "1080p" quality downloads a different resolution than expected.
@@ -213,7 +213,7 @@ from pixel dimensions.
 
 ## #9 — AShemaleTube embed format change
 
-**Status:** ✅ VERIFIED
+**Status:** [OK] VERIFIED
 
 **Symptom:**
 AShemaleTube downloads reported no formats found, even though the page title and
@@ -240,7 +240,7 @@ Tested successfully with `https://www.ashemaletube.com/videos/1163113/best-frien
 
 ## #10 — Release artifacts belong in GitHub Releases, not git
 
-**Status:** ✅ Verified
+**Status:** [OK] Verified
 
 **Problem:** Committing compiled binaries (90–320 MB each) to the git repository causes push failures
 (GitHub rejects files > 100 MB) and bloats the repo history. Git LFS is an option but adds
@@ -265,7 +265,7 @@ root holds the token (`~/.config/gh/hosts.yml`). Run via `sudo bash -c '...'`.
 
 ## #11 — SEA binaries must be built with official Node.js binary
 
-**Status:** ✅ Verified
+**Status:** [OK] Verified
 
 **Problem:** Distro-packaged Node.js binaries (e.g. Fedora/RHEL `node-22`, 28 KB wrapper)
 lack the `NODE_SEA_FUSE` sentinel required for Single Executable Application (SEA) injection.
@@ -295,7 +295,7 @@ AFTER building, the binary will report the old version — rebuild after the bum
 
 ## #12 — Chapter Embedding via ffmetadata
 
-**Status:** ✅ Verified (v2.0.87)
+**Status:** [OK] Verified (v2.0.87)
 
 **Problem:** YouTube videos with chapter markers (timestamps in the description) lost
 those chapters when downloaded — the output file had no chapter metadata, so media
@@ -328,7 +328,7 @@ of the ffmetadata file (after video, audio, and subtitle inputs).
 
 ## #13 — ffmpeg -map 0 Required When Remuxing Multi-Stream Files
 
-**Status:** ✅ Verified (v2.0.86 container)
+**Status:** [OK] Verified (v2.0.86 container)
 
 **Problem:** After downloading a video with multiple subtitle tracks (e.g., EN + HU),
 the subtitle disposition post-processing step (`ffmpeg -i file -c copy -disposition:s 0`)
@@ -360,7 +360,7 @@ preserve them all. This applies to disposition changes, metadata edits, and any
 
 ## #14 — YouTube 403 — Client Table & gvs PO Tokens (Phase 2 deferred)
 
-**Status:** ✅ Phase 1 verified in production · ⏳ Phase 2 deferred
+**Status:** [OK] Phase 1 verified in production · [OPEN] Phase 2 deferred
 
 **Symptom:** YouTube downloads intermittently failed with `HTTP 403 Forbidden` on
 `*.googlevideo.com/videoplayback` media URLs, even though extraction succeeded.
@@ -407,7 +407,7 @@ a separate real-Node process.
 
 ## #15 — HentaiHaven — Cloudflare managed challenge (curl only) & obfuscated HLS segments
 
-✅ Verified 2026-07-16 (full 720p episode downloaded to a valid MP4).
+[OK] Verified 2026-07-16 (full 720p episode downloaded to a valid MP4).
 
 **Site flow (`hentaihaven.xxx`, WordPress "player-logic" plugin by zarat.dev):**
 1. Watch page → `<iframe src=".../wp-content/plugins/player-logic/player.php?data=…">`.
@@ -454,7 +454,7 @@ file extensions.
 
 ## #16 — DRM detection — refuse cleanly, never circumvent; don't flag plain AES-128
 
-✅ Verified 2026-08-03 (unit + real Widevine/PlayReady test vectors + clear streams).
+[OK] Verified 2026-08-03 (unit + real Widevine/PlayReady test vectors + clear streams).
 
 videodl **detects** DRM and stops with a clear message; it does **not** and will
 not circumvent it (no CDM, no keys, no decryption). `src/drm-detect.js`
@@ -490,7 +490,7 @@ fallback path; this adds the same clarity to the native download path.)
 
 ## #17 — IndaPlay/IndaEvents — find the *host*, and never trust a 200 or a page's first video
 
-✅ Verified 2026-09-06 (8 live URL shapes + an end-to-end download, byte-exact).
+[OK] Verified 2026-09-06 (8 live URL shapes + an end-to-end download, byte-exact).
 
 **Fingerprint the host before writing anything.** The ask was "download videos
 from the IndaEvents app". indaevents.hu hosts no video at all — event pages at
@@ -535,7 +535,7 @@ No DRM anywhere: zero `EXT-X-KEY`, and the instance sets `downloadEnabled: true`
 
 ## #18 — Security hardening 2026-09-13: the fixes and what they taught
 
-✅ Shipped as CLI 2.0.137 / container 2.0.138 (see `REVIEW-2026-09-13.md` for the findings).
+[OK] Shipped as CLI 2.0.137 / container 2.0.138 (see `REVIEW-2026-09-13.md` for the findings).
 CLI 2.0.136 was published but **superseded the same day** — see item 8.
 
 1. **ffmpeg's `-protocol_whitelist` is per *input* and applies to every nested open.**
@@ -595,7 +595,7 @@ CLI 2.0.136 was published but **superseded the same day** — see item 8.
 
 ## #19 — PornHub — two HLS CDNs per page load, and `get_media` needs the session cookies
 
-✅ Fixed in CLI 2.0.139 (2026-10-03).
+[OK] Fixed in CLI 2.0.139 (2026-10-03).
 
 **Symptom.** `[PornHub] Failed to parse HLS playlist: … 410 (Gone): GET https://hv-h.phncdn.com/hls/…/master.m3u8?h=…&e=…&f=1`
 for every quality, then `Found 0 formats`. The failure was intermittent: about two page
@@ -643,7 +643,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #20 — CRLF lost in the 2026-10-13/14 documentation audit, restored by the next commit
 
-**Status:** ✅ Verified in git history on 2026-10-31.
+**Status:** [OK] Verified in git history on 2026-10-31.
 
 - **Version / commit:** 2.0.139; audit commit `28946a3` (author date 2026-10-14 00:13 +0200), restore commit `7ff739d` (2026-10-14 00:13:57 +0200).
 - **Symptom:** the audit commit shows 1,295 inserted and 1,291 deleted lines, although its purpose was a few lines of text:
@@ -654,13 +654,13 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
   ```
 
 - **Root cause:** the README and CHANGELOG were CRLF before the audit commit. The audit edit was written with LF line endings (the text of `7ff739d` says so). Nothing counted the carriage returns before the commit, so the whole file changed.
-- **Fix:** `7ff739d` restored CRLF in both files (1,295 lines in each direction, content unchanged). On 2026-10-31 the HEAD copy of README.md has 673 CR bytes, one per line.
+- **Fix:** `7ff739d` restored CRLF in both files (1,295 lines in each direction, content unchanged). On 2026-10-31 the HEAD copy of README.md had 673 CR bytes, one per line (outdated since 2026-10-31 21:07 CET: the audit commit `4ade70b` rewrote README.md, which now has 328 lines and 328 CR bytes).
 - **Rule:** before a commit of an edited Markdown file, compare `git show HEAD:<file> | tr -cd '\r' | wc -c` with `tr -cd '\r' < <file> | wc -c`. Count carriage returns with `tr`, not with `grep -c $'\r'`, because in Git Bash that counts every line that contains the letter r.
 - **Detection gap:** nothing automatic. The audit text reported the Linux worktree as clean, but nobody compared line endings.
 
 ## #21 — Subtitle default changed to "none" inside a commit about MAX_PATH
 
-**Status:** ⏳ Open. Owner decision needed (see "Known gaps" in README.md).
+**Status:** [OPEN] Open. Owner decision needed (see "Known gaps" in README.md).
 
 - **Version / commit:** the English + Hungarian default was set by `66d335c` (2026-04-23, CHANGELOG 2.0.58 and 2.0.63). It was removed by `dbcea2e` (2026-04-25), subject "fix: use .mkv instead of .webm for VP9/AV1+Opus, truncate filenames to prevent Windows MAX_PATH overflow". The commit has an empty body and no CHANGELOG line.
 - **Symptom:** the code constant in `src/cli.js` reads `const DEFAULT_SUB_LANGS = [];`, with a comment that an empty list disables subtitles. The `--sub-lang` option text says `Default: none`. The subtitle section of the help text printed by `node src/cli.js download --help` says `en,hu — English + Hungarian (DEFAULT)`. The README section "Download with Subtitles" says English and Hungarian are downloaded by default. Two sources say yes and two say no.
@@ -671,7 +671,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #22 — Home-lab details in a public repository (removed from the tree, still in history)
 
-**Status:** ✅ Fixed in the tree by `f9d8706` (2026-09-13). ⏳ Open in history (owner option).
+**Status:** [OK] Fixed in the tree by `f9d8706` (2026-09-13). [OPEN] Open in history (owner option).
 
 - **Version / commit:** 2.0.137 to 2.0.139; `f9d8706` "Remove home-lab topology from this public repository".
 - **Symptom:** before 2026-09-13 the docs and the scripts named the build host address, network share paths, a deploy user and uid, LAN service ports, and the path of the host updater. The repository is public (AGENTS.md, CHANGELOG 2.0.139).
@@ -683,7 +683,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #23 — Accidental symlink `.compile.unix.sh` committed by a sync commit
 
-**Status:** ⏳ Open. The symlink is still tracked at HEAD (`7ff739d`).
+**Status:** [OPEN] Open. The symlink is still tracked at HEAD (`4ade70b`, 2026-10-31; the audit commit documented the symlink and did not remove it).
 
 - **Version / commit:** the path `.compile.unix.sh` appears in `326bb7b` (2026-04-23, "remove accidental .compile.unix.sh symlink"), `3f3966a` (2026-04-27), `4b94b18` (2026-04-28) and `41e066b` (2026-07-21, "Sync working changes"). The last change left the symlink in HEAD.
 - **Symptom:** on the Linux build host, `git ls-files -s .compile.unix.sh` prints mode `120000`, and `ls -la` shows `.compile.unix.sh -> /tmp/compile.unix.sh`. The file does not exist on any other checkout, so the link is dangling there. On Windows the same path shows as deleted (` D` in `git status`), because a symlink cannot be followed there.
@@ -694,10 +694,10 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #24 — Executable bits flipped on every file by Windows checkouts
 
-**Status:** ⏳ Partly open. History cannot be changed; the working rule is below.
+**Status:** [OPEN] Partly open. History cannot be changed; the working rule is below.
 
 - **Version / commit:** mode-only changes from 100644 to 100755 on 77 to 89 files each in `dd8447e` (2026-03-20), `3d8bb90` (2026-03-20), `7b3a169` (2026-03-20), `9a209ba` (2026-03-20), `4c66a0b` (2026-03-20), `ed5ac11` (2026-03-20), `bb718e8` (2026-04-23), `3f3966a` (2026-04-27) and `41e066b` (2026-07-21).
-- **Symptom:** `git show --stat dd8447e` reports 77 changed files and 0 changed lines. `git diff --ignore-cr-at-eol --shortstat` on the same commit reports 77 files and 0 insertions and 0 deletions. On a Windows checkout `git diff --stat HEAD` reported 110 files changed and 0 lines. At HEAD every tracked file, including `README.md`, `AGENTS.md` and `src/cli.js`, has mode `100755`.
+- **Symptom:** `git show --stat dd8447e` reports 77 changed files and 0 changed lines. `git diff --ignore-cr-at-eol --shortstat` on the same commit reports 77 files and 0 insertions and 0 deletions. On a Windows checkout `git diff --stat HEAD` reported 110 files changed and 0 lines. At HEAD (`7ff739d`) every tracked file, including `README.md`, `AGENTS.md` and `src/cli.js`, had mode `100755` (corrected 2026-10-31: three files were already `100644` then; at `4ade70b` five are `100644`).
 - **Root cause:** the files were checked out or copied through a Windows share that presents every file as executable. With `core.fileMode` true, git recorded the mode of the copy.
 - **Fix:** none for the history. On a Windows checkout run `git config core.fileMode false`. The Linux read used in the 2026-10-31 pass is `git -c core.fileMode=false status --short`. Owner decision: whether non-script files should be 100644 again (a commit that changes only modes is then needed).
 - **Rule:** read status with `core.fileMode` false. A mode-only diff is not a change. Do not commit a commit whose only change is a mode.
@@ -705,7 +705,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #25 — Commit subjects "some minor fixes" hide what was fixed
 
-**Status:** ✅ Recorded. Rule in force from 2026-03-21.
+**Status:** [OK] Recorded. Rule in force from 2026-03-21.
 
 - **Version / commit:** 18 commits on 2026-03-20, among them `9a209ba`, `02c4ac2`, `25c4309`, `dbea660`, `bcbdece`, `63c6453`, `3f36ca8`, `03e0ac7` and `759a501`, have the subject "some minor fixes" or "some minor yt fixes" and one or two changed lines each.
 - **Symptom:** `git log` cannot say which site or which symptom each commit fixed. The later postmortems (for example #14 and #19) had to be rebuilt from the diff.
@@ -716,7 +716,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #26 — Binaries shipped without the CycleTLS helper ("Executable not found")
 
-**Status:** ✅ Fixed by `c61c405` (2026-03-20).
+**Status:** [OK] Fixed by `c61c405` (2026-03-20).
 
 - **Version / commit:** the 2.0.1 line; fix `c61c405` "fix: ship CycleTLS Go helper binary alongside SEA binary".
 - **Symptom:** a compiled binary or the container failed with `Executable not found` for SpankBang, 9GAG, Dailymotion (HLS) and Bitchute, and for the Cloudflare bypass. The text is quoted in the CHANGELOG 2.0.10 entry.
@@ -727,7 +727,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #27 — Skool: data in embedded JSON, a referrer rule on Mux, cookies by domain
 
-**Status:** ✅ Fixed in 2.0.101 to 2.0.112 (commits `a6ae043` to `63730b5`, 2026-05-09 and 2026-05-10).
+**Status:** [OK] Fixed in 2.0.101 to 2.0.112 (commits `a6ae043` to `63730b5`, 2026-05-09 and 2026-05-10).
 
 - **Version / commit:** 2.0.101 (first classroom extractor) to 2.0.112 (community posts; the number 2.0.111 had been used for the code of 2.0.110, so the release went out as 2.0.112).
 - **Symptom:** lessons returned no video, then `HTTP 403` from the Mux playback URL, then the placeholder title `EOS Club` (a page fetched without the session), then wrong titles for lessons inside sections.
@@ -738,7 +738,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #28 — A playlist result crashed the default download path
 
-**Status:** ✅ Fixed in 2.0.68 (2026-04-23).
+**Status:** [OK] Fixed in 2.0.68 (2026-04-23).
 
 - **Symptom:** `Cannot read properties of undefined (reading 'some')` when a YouTube playlist or channel URL was given to `download`.
 - **Root cause:** the code read `videoInfo.formats` for every result. A playlist result has `_type: 'playlist'` and a list of entries, and no `formats` array.
@@ -748,7 +748,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #29 — YouTube auto-translate answers 429 to anonymous requests
 
-**Status:** ✅ Mitigated in 2.0.62 and 2.0.63 (2026-04-23). Still a site limit.
+**Status:** [OK] Mitigated in 2.0.62 and 2.0.63 (2026-04-23). Still a site limit.
 
 - **Version / commit:** `a8d5118` (2026-04-23, 2.0.62: pacing and backoff) and `d43a770` (2026-04-23, 2.0.63: cookies and headers forwarded).
 - **Symptom:** `HTTP 429 Too Many Requests` on the `&tlang=` auto-translate URL; the translated subtitle track was silently missing.
@@ -759,7 +759,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 
 ## #30 — Documentation drift: stale tags, file names, counts and CHANGELOG dates
 
-**Status:** ✅ README and HOWTO corrected on 2026-10-31. ⏳ CHANGELOG headers left for the owner.
+**Status:** [OK] README and HOWTO corrected on 2026-10-31. [OPEN] CHANGELOG headers left for the owner.
 
 - **Symptom:** README said "45 site extractors" in the feature list and "47" in the introduction; the registry has 47 native extractors (49 entries with yt-dlp and direct). README said "last git tag v2.0.99"; the tags `v2.0.134`, `v2.0.136`, `v2.0.137` and `v2.0.139` exist. README and the troubleshooting section named `update-from-ytdlp.sh`; the file is `update-from-upstream.sh` (renamed in the 2.0.139 security work). CHANGELOG 2.0.139 said "No `v2.0.139` git tag exists"; the tag was created on 2026-10-03. The CHANGELOG 2.0.10 header is dated 2026-07-17, while its commits are from March 2026, and it sits in the file next to the 2.0.30 entry dated 2026-03-21.
 - **Root cause:** the facts were copied from one place into several documents, and the changes of a day did not update the README on the same day. The 2026-10-13/14 audit read only the top of each file.

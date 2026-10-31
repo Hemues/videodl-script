@@ -21,7 +21,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - To update from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → gate → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `bash update-from-upstream.sh {check|run|status}` on the build host (host-specific values live in the private `/etc/videodl-upstream.env`, never in this repo).
 
 ## Environment
-- Repository: public, on the code host (`Hemues/videodl-script`). Tags run from `v2.0.x`; the newest is `v2.0.139` (2026-10-03). HEAD on 2026-10-31: `7ff739d`.
+- Repository: public, on the code host (`Hemues/videodl-script`). Tags run from `v2.0.x`; the newest is `v2.0.139` (2026-10-03). HEAD on 2026-10-31: `4ade70b` (the 2026-10-31 fleet audit commit, committed and pushed; the commit before it is `7ff739d`).
 - Node: the build host uses `/usr/bin/node` v22.22.2 (verified 2026-10-31). `package.json` says `node >= 18`. SEA builds need the official Node binary pinned in `build-pins.json` (LESSONS #11).
 - Two local clones of this repository exist on the owner's build network share. One is the working clone. The other is a mirror that must be fast-forwarded after every push and never edited. This note gives no paths on purpose (public repository; LESSONS #22). Keep the mirror at HEAD after each push.
 - Linux truth for status: `git -c core.fileMode=false status --short` on the build host. The Windows view through the share shows mode flips and line-ending warnings that are not content (LESSONS #24).
@@ -34,7 +34,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - `node src/cli.js extractors --json` → 49 entries; 47 native extractors plus `ytdlp` and `direct` (verified 2026-10-31).
 - `node src/cli.js download --help` → the full option list (verified 2026-10-31). Its subtitle section contradicts the code on the default; see LESSONS #21.
 - `git -c core.fileMode=false status --short` on the build host → `?? tests/__pycache__/` and nothing else on 2026-10-31. The tracked symlink `.compile.unix.sh` is in HEAD (LESSONS #23).
-- `git log --date=short --reverse --format='%ad %h %s'` → 90 commits, 2026-02-25 to 2026-10-14 (verified 2026-10-31).
+- `git log --date=short --reverse --format='%ad %h %s'` → 91 commits, 2026-02-25 to 2026-10-31 (verified 2026-10-31; 90 commits up to `7ff739d` before the audit commit).
 - `git tag --sort=creatordate --format='%(creatordate:short) %(refname:short)' | tail -4` → `v2.0.134`, `v2.0.136`, `v2.0.137`, `v2.0.139` (verified 2026-10-31).
 - `python3 tests/smoke.py --source` → runs the cases through `node src/cli.js`; needs network (not verified in the 2026-10-31 pass).
 - `bash compile.sh --bundle-only` → CJS bundle only (not verified in the 2026-10-31 pass).

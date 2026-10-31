@@ -49,7 +49,7 @@ Two ways to get the code:
 # Option A: clone (needs access to the repository on the code host)
 git clone https://github.com/Hemues/videodl-script.git videodl-cli
 cd videodl-cli
-git log --oneline -1          # the newest commit, for example 7ff739d (2026-10-14)
+git log --oneline -1          # the newest commit, for example 4ade70b (2026-10-31)
 ```
 
 ```bash
@@ -64,8 +64,8 @@ On the owner's Windows workstation the repository is also present as a local clo
 Verify a checkout before you trust it:
 
 ```bash
-git -c core.fileMode=false status --short     # expect no output on a clean checkout
-git ls-files -s compile.sh                     # mode 100755 is the HEAD state; see LESSONS #24
+git -c core.fileMode=false status --short     # expect no output on a clean checkout (an untracked tests/__pycache__/ after a test run is not a change)
+git ls-files -s compile.sh                     # mode 100755 is the HEAD state for most files (a few are 100644, see README "Known gaps" and LESSONS #24)
 ```
 
 ## 3. Install
