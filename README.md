@@ -1,61 +1,65 @@
 # videodl-cli
 
-A powerful CLI video downloader and converter with **47 built-in site extractors**, DASH/HLS streaming support, cookie-based authentication, subtitle embedding, and standalone binary compilation. Inspired by [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp).
+A command line video downloader and converter with 47 native site extractors, DASH and HLS support, cookie-based authentication, subtitle embedding, chapter embedding, a yt-dlp fallback for more than 1000 sites, and standalone binary builds for Linux and Windows. It is used by people who need to download video from sites they are allowed to use, and it is the engine behind the VideoDL container web UI.
 
-**Current version: 2.0.139** (`package.json`; the `CHANGELOG.md` top entry; last git tag `v2.0.99`, so tags lag). **Start here:** this README, `AGENTS.md`, `LESSONS-LEARNED.md` (numbered postmortems), `CHANGELOG.md`. The container image around this CLI is built from the sibling repo `containers/videodl-container` (its `build.sh`), not from here.
+It is NOT a DRM circumvention tool (it detects DRM and refuses it), NOT a site-login cracker (cookies come from the user's own session), and NOT a general media player or editor. Conversion is a thin wrapper around ffmpeg.
 
-## Features
+**Current version: 2.0.139** (`package.json`, the top entry of `CHANGELOG.md`, and the output of `node src/cli.js --version`, verified 2026-10-31 on the build host).
 
-- **45 site extractors** — YouTube, PornHub, XVideos, xHamster, Facebook, Vimeo, Reddit, Twitch, Twitter/X, and many more
-- **Quality selection** — choose `best`, `worst`, `720p`, `1080p`, or let it auto-select
-- **Playlist & channel support** — YouTube playlists and channels are auto-detected; videos are downloaded into a subdirectory named after the playlist/channel
-- **YouTube Premium support** — automatically downloads enhanced bitrate (Premium) formats when a YouTube Premium cookie is provided
-- **DASH merging** — automatically merges separate video + audio streams via ffmpeg
-- **HLS streaming** — downloads M3U8 / HLS streams with ffmpeg
-- **DRM detection** — HLS/DASH streams protected by Widevine/PlayReady/FairPlay/CENC are detected up front and refused with a clear message (detection only — videodl never circumvents DRM; ordinary AES-128 HLS is unaffected)
-- **Subtitle support** — downloads, embeds, and auto-translates subtitles (YouTube)
-- **Chapter embedding** — YouTube chapter markers from the video description are automatically embedded as metadata (works in VLC, mpv, MPC-HC, etc.)
-- **Cookie authentication** — Netscape cookie files (same format as yt-dlp / curl)
-- **Auto cookie generation** — browser-based login automation via Puppeteer
-- **Cloudflare bypass** — TLS fingerprint impersonation for CF-protected CDNs
-- **CAPTCHA solving** — free reCAPTCHA v2 solver (wit.ai) or paid (2captcha)
-- **Format conversion** — full ffmpeg wrapper (codecs, bitrate, resolution, fps)
-- **Auto-downloads ffmpeg** — fetches a static ffmpeg build if not in PATH
-- **Standalone binaries** — compiles to single-file executables (Windows + Linux)
-- **Programmatic API** — import as an ES module for integration into other projects
-- **Smart filenames** — auto-adds source domain to filenames (e.g., `video-youtube.com.mp4`)
+## Start here
 
-## Security
+1. This README: what the tool is, the current version, the architecture, where things are.
+2. `docs/HOWTO-USE.md`: every command and option, install steps, examples with synthetic URLs, troubleshooting, the per-site limits. Read it before you run anything.
+3. `AGENTS.md`: the invariants of the code (SSRF guard, ffmpeg whitelist, output confinement, solver sandbox), the extractor gotchas and the public-repository rule. Read it before you change any code.
+4. `CHANGELOG.md`: the top entry, which is the newest change, and the Security section of 2.0.139.
+5. `LESSONS-LEARNED.md`: the numbered postmortems (symptom, root cause, fix, rule). Entry #19 has the per-site throttles, entries #20 to #30 were added on 2026-10-31.
+6. `STORYLINE.md`: the development story by phase, from the first commit on 2026-02-25 to the documentation pass of 2026-10-31.
+7. `REVIEW-2026-09-13.md`: the code and security review that produced release 2.0.137 and the hardening of 2.0.139.
 
-videodl fetches whatever URL it is given and runs code from the sites it downloads
-from, so a few guards are on by default (details: `REVIEW-2026-09-13.md`,
-`LESSONS-LEARNED.md #18`):
+## What it is
 
-- **Private-network guard (SSRF).** URLs whose host is loopback, RFC1918, link-local,
-  CGNAT, multicast, `localhost` / `*.local` / `*.internal`, or that *resolve* to such an
-  address, are refused — for the input URL, every media URL and every redirect. Only
-  `http`/`https` schemes are accepted. Downloading from your own NAS on the LAN?
-  Pass `--allow-private-urls` (or set `VIDEODL_ALLOW_PRIVATE_URLS=1`).
-- **Output filenames stay inside `-d`.** `-o` may use `%(title)s`, `%(ext)s`, `%(id)s`,
-  `%(extractor)s`, `%(quality)s` and sub-folders, but never `..` or absolute paths.
-- **Sandboxed YouTube challenge solver.** The solver executes YouTube's player
-  JavaScript; it runs in a child process of the same binary under Node's permission
-  model (no filesystem, no child processes, no workers). `VIDEODL_SOLVER_UNSANDBOXED=1`
-  disables this for debugging only and warns loudly.
-- **ffmpeg never gets `file:` in its protocol whitelist**, so a malicious HLS playlist
-  cannot make it read local files; in-memory playlists are passed as `data:` URIs.
-- **TLS is verified everywhere**, including the yt-dlp fallback; `--no-ssl-verify`
-  disables it explicitly and only then.
-- **Reproducible binaries**: Node.js, ffmpeg, the solver and every npm dependency are
-  pinned with sha256 (`BUILD.md`), and each release ships `SHA256SUMS`.
+videodl-cli is a Node.js ES module with a `commander` command line front end (`src/cli.js`). It turns a page URL into a list of media formats through a site extractor, chooses a format, downloads it (direct HTTP, HLS through ffmpeg, DASH merge through ffmpeg, or through the CycleTLS helper for Cloudflare-protected CDNs), handles subtitles and chapters, and optionally converts the result.
 
-## Supported Sites
+Main features, each with the file that owns it:
+
+- **47 native site extractors** (`src/extractors/*.js`, registry in `src/extractors/index.js`). The registry has 49 entries in total: the 47 site extractors, the yt-dlp fallback (`ytdlp.js`) and the direct-URL extractor (`direct.js`). The complete site list is in the table below.
+- **Quality selection** (`-f best|worst|720p|1080p`, default `best`). A warning is printed when the requested height is not available.
+- **Playlists and channels.** YouTube playlist and channel URLs are detected; each entry is downloaded into a sub-folder named after the playlist.
+- **YouTube Premium formats.** With a Premium cookie file the Premium formats are preferred and the resolution is upgraded (README section "YouTube Premium Enhanced Bitrate" in the HOWTO, section 5.5).
+- **DASH merge and HLS** through ffmpeg (`src/downloader.js`, `src/ffmpeg-helper.js`). ffmpeg is looked up on the PATH in-process; a static build is downloaded to `~/.videodl-cli/ffmpeg/` if none is found.
+- **DRM detection** (`src/drm-detect.js`): Widevine, PlayReady, FairPlay, CENC and SAMPLE-AES streams stop with a clear message. Ordinary HLS AES-128 is not flagged.
+- **Subtitles** (`resolveSubtitleDownloads` in `src/cli.js`): manual, automatic and auto-translated tracks, with per-language aliases and 429 pacing. The default is NO subtitles (see "Known gaps" below).
+- **Chapters**: YouTube description timestamps and yt-dlp chapter lists are written as an ffmetadata file and merged with `-map_chapters`.
+- **Cookies**: Netscape cookie files, browser-based login automation (Puppeteer), `browser-login` for a manual login, and expiry checks for YouTube.
+- **CAPTCHA solving** for reCAPTCHA v2 through wit.ai (free) or 2captcha (paid).
+- **Cloudflare bypass** through the CycleTLS Go helper (`src/cf-solver.js`, `src/cycletls-helper.js`) and, for one site, a curl subprocess.
+- **Conversion**: `convert`, `dl-convert`, `probe`, `formats`, `codecs` (ffmpeg wrapper, `src/converter.js`).
+- **Machine output**: `extract` and `download-json` print JSON for a backend (the container web UI).
+- **Standalone binaries**: Node.js SEA builds with pinned Node and ffmpeg, plus a portable CJS bundle (`build.mjs`, `compile.sh`, `compile.ps1`).
+- **Programmatic API**: `VideoDownloader`, `VideoConverter`, `extractVideoInfo` exported from `src/index.js`.
+- **Smart file names**: `<title>-<domain>.<ext>` unless `-o` or `--no-base-url` is used.
+
+## Security posture
+
+The tool fetches whatever URL it is given and runs code that the sites send. The guards below are on by default. The smoke gate in `tests/smoke.py` has negative tests for the SSRF guard, the `-o` traversal and the solver sandbox. The reasons are in `REVIEW-2026-09-13.md` and `LESSONS-LEARNED.md` #18.
+
+- **Private-network guard (SSRF)**, `src/url-guard.js`. Loopback, RFC 1918, link-local, CGNAT, multicast, reserved names (`localhost`, `*.local`, `*.internal`) and hosts that resolve to such addresses are refused. The check runs for the input URL, every media URL and every redirect. Only `http` and `https` are accepted. For a NAS on your LAN use `--allow-private-urls` or `VIDEODL_ALLOW_PRIVATE_URLS=1`.
+- **Output confinement**, `resolveOutputFilename` in `src/cli.js`. `-o` may use `%(title)s`, `%(ext)s`, `%(id)s`, `%(extractor)s`, `%(quality)s` and sub-folders, but never `..` and never an absolute path.
+- **Sandboxed YouTube challenge solver** (`src/solver-sandbox.js`, `src/solver-host.js`). The solver runs YouTube's player JavaScript in a child process of the same binary, under Node's permission model (no file system, no child processes, no workers). `VIDEODL_SOLVER_UNSANDBOXED=1` turns this off for debugging and prints a warning.
+- **ffmpeg never gets `file:` in its protocol whitelist.** Playlists that must be passed in memory use `data:` URIs (`hlsPlaylistToDataUri`).
+- **TLS is verified everywhere**, including the yt-dlp fallback. `--no-ssl-verify` disables it for one run.
+- **Header values** have CR and LF removed before they reach ffmpeg.
+- **Reproducible binaries**: Node.js (v22.22.2), ffmpeg (the BtbN release branch `n8.1.2`), the solver (`yt-dlp/ejs 0.8.0`) and every npm dependency are pinned with sha256 (`build-pins.json`, `src/vendor/ejs.lock.json`, `package-lock.json`). Each release ships `SHA256SUMS`.
+
+## Supported sites
+
+The table is the README copy of the support list. The 47 native extractors are listed; "yt-dlp fallback" and "direct URLs" are not native.
 
 | Site | URL | Notes |
 |------|-----|-------|
-| YouTube | youtube.com, youtu.be | Full downloads up to 2160p (native client rotation + n/sig solving). Age-restricted/token-gated may 403 — see [limitations](YOUTUBE-LIMITATIONS.md) |
+| YouTube | youtube.com, youtu.be | Full downloads up to 2160p (native client rotation + n/sig solving). Age-restricted or token-gated videos may answer 403; see [limitations](YOUTUBE-LIMITATIONS.md) |
 | xHamster | xhamster.com | Full support |
-| PornHub | pornhub.com | Full support |
+| PornHub | pornhub.com | Full support. HLS CDN is chosen per page load; the mp4 list needs the page cookies (2.0.139). Per-quality throttle, see LESSONS #19 |
 | XVideos | xvideos.com | Full support |
 | XNXX | xnxx.com | Full support |
 | YouPorn | youporn.com | HLS streaming |
@@ -66,7 +70,7 @@ from, so a few guards are on by default (details: `REVIEW-2026-09-13.md`,
 | Dailymotion | dailymotion.com, dai.ly | TLS fingerprint bypass (cycletls) |
 | Twitch | twitch.tv, clips.twitch.tv | Clips and VODs |
 | Reddit | reddit.com, v.redd.it | HLS adaptive streaming |
-| Twitter/X | twitter.com, x.com | Via fxtwitter API; some tweets may fail |
+| Twitter/X | twitter.com, x.com | Via the fxtwitter API; some tweets may fail |
 | TikTok | tiktok.com, vm.tiktok.com | May require cookies |
 | Instagram | instagram.com | Requires cookies (posts, reels, IGTV) |
 | Streamable | streamable.com | Full support |
@@ -74,12 +78,12 @@ from, so a few guards are on by default (details: `REVIEW-2026-09-13.md`,
 | Odysee | odysee.com | LBRY resolve API |
 | 9GAG | 9gag.com | Video posts; TLS fingerprint bypass (cycletls) |
 | SpankBang | spankbang.com | TLS fingerprint bypass (cycletls) |
-| Eporner | eporner.com | Multiple qualities including AV1 |
-| Bitchute | bitchute.com | Limited — SPA may require JavaScript rendering |
-| Imgur | imgur.com | Video/gifv posts; limited SPA support |
+| Eporner | eporner.com | XHR video API; several qualities including AV1 |
+| Bitchute | bitchute.com | Limited; the SPA may need JavaScript rendering |
+| Imgur | imgur.com | Video and gifv posts; limited SPA support |
 | Indavideo | indavideo.hu | Full support |
 | IndaEvents | indaevents.hu | Event pages (`/e/<event>`); resolves the IndaPlay or YouTube embed |
-| IndaPlay | indaplay.hu, cms.indaplay.hu | PeerTube-backed; videos, embeds, and whole channels as playlists |
+| IndaPlay | indaplay.hu, cms.indaplay.hu | PeerTube-backed; videos, embeds and whole channels as playlists |
 | Videa | videa.hu, videakid.hu | Full support |
 | Motherless | motherless.com | Full support |
 | InPorn | inporn.com | Full support |
@@ -87,579 +91,229 @@ from, so a few guards are on by default (details: `REVIEW-2026-09-13.md`,
 | TubeSafari | tubesafari.com | xHamster embeds |
 | PornOne | pornone.com | Full support |
 | PornZog | pornzog.com | HClips embeds |
-| UncensoredHentai | uncensoredhentai.xxx | Full support |
-| HentaiHaven | hentaihaven.xxx | player-logic plugin → HLS; needs `curl` (Cloudflare managed challenge blocks Node/cycletls TLS) |
+| UncensoredHentai | uncensoredhentai.xxx | Full support; JW Player caption tracks |
+| HentaiHaven | hentaihaven.xxx | WordPress player-logic plugin, then HLS. Needs `curl` (the Cloudflare managed challenge blocks Node and cycletls TLS) |
 | AShemaleTube | ashemaletube.com | HLS streaming, CycleTLS |
 | Brazzers | brazzers.com | Requires cookies |
-| KVS | KVS-powered sites (blowjobs.pro, tgtsporn.com, hentaigem.com) | Generic KVS engine (flashvars + license-code unscrambling) |
-| **yt-dlp** | **1000+ additional sites** | **Fallback — requires `yt-dlp` installed** |
-| Direct URLs | any `.mp4`, `.mkv`, `.webm`, `.m3u8` | Fallback extractor |
+| KVS engine | blowjobs.pro, tgtsporn.com, hentaigem.com (the list `KVS_DOMAINS` in `src/extractors/kvs.js`) | Generic KVS engine (flashvars and license-code unscrambling) |
+| Skool | skool.com | Classroom lessons (YouTube or Mux video) and community posts; needs a logged-in cookie for the real title |
+| StreamIMDb | streamimdb.ru, vidapi.ru, vaplayer.ru (`/embed/` pages) | HLS variants; OpenSubtitles lookup by IMDb id |
+| JustSwallows | justswallows.live | Embeds vtbe.to; the Vtbe host extractor does the work |
+| Vtbe | vtbe.to | Host extractor, reusable by other tube sites |
+| Erome | erome.com (album pages `/a/<id>`) | Native extractor |
+| Bingato | bingato.com (item, search, category, model and tag pages) | Native extractor |
+| Mat6tube | mat6tube.com (watch pages `/watch/<owner>_<video>`) | Native extractor |
+| **yt-dlp** | **1000+ additional sites** | **Fallback; requires `yt-dlp` on the PATH** |
+| Direct URLs | any `.mp4`, `.mkv`, `.webm`, `.m3u8` | Fallback extractor; rejects a `text/html` response |
 
-> **yt-dlp fallback:** When no native extractor matches a URL, videodl-cli automatically
-> delegates to [yt-dlp](https://github.com/yt-dlp/yt-dlp) if it is installed on the system.
-> This adds instant support for Bilibili, Niconico, Crunchyroll, Soundcloud, Bandcamp,
-> VK, OK.ru, Arte, BBC iPlayer, Patreon, Nebula, and many more.
-> Install with `pip install yt-dlp`. In the VideoDL container, yt-dlp is pre-installed.
+> **yt-dlp fallback:** When no native extractor matches, the CLI delegates to yt-dlp if it is installed. Native extractors always come first. Without yt-dlp the fallback skips silently. In the container, yt-dlp is pre-installed.
 
-## Prerequisites
+## Current version and where it runs
 
-- **Node.js** >= 18.0.0
-- **ffmpeg** (auto-downloaded if not found in PATH)
+| Item | Value | Recorded in |
+|------|-------|-------------|
+| CLI version | 2.0.139 (2026-10-03) | `package.json`, `CHANGELOG.md` top entry |
+| Git tag | `v2.0.139` on 2026-10-03; 77 tags in total | `git tag` (the README used to say "last tag v2.0.99", outdated since 2026-10-03: tags v2.0.134, v2.0.136, v2.0.137 and v2.0.139 exist) |
+| HEAD | `7ff739d` (2026-10-14), the CRLF restore after the audit commit `28946a3` | `git log -1` |
+| GitHub release assets | per release: `videodl-linux`, `videodl-ffmpeg-linux`, `videodl.exe`, `videodl-ffmpeg.exe`, `videodl-x86.exe`, the CycleTLS helpers, `SHA256SUMS`, `videodl.cjs` | the release page (not checked in the 2026-10-31 pass) |
+| Container image | built by the sibling repository `videodl-container` (its `build.sh`), not by this repository | that repository's README |
+| Node.js used to build | v22.22.2 (pinned in `build-pins.json`) | `build-pins.json` |
+| Verified on 2026-10-31 | `node src/cli.js --version` = 2.0.139; `node src/cli.js extractors --json` = 49 entries; Linux `git status --short` = one untracked folder (`tests/__pycache__/`) and nothing else. The tracked symlink `.compile.unix.sh` is in HEAD and is not shown as a change | this pass, see `STORYLINE.md`, "Where it stands now" |
 
-### Installing ffmpeg
-
-<details>
-<summary>Windows</summary>
-
-```powershell
-# Using Chocolatey
-choco install ffmpeg
-
-# Or download from https://ffmpeg.org/download.html
-```
-</details>
-
-<details>
-<summary>Linux</summary>
+How to check the version on a machine:
 
 ```bash
-# Ubuntu/Debian
-sudo apt install ffmpeg
-
-# Fedora
-sudo dnf install ffmpeg
-
-# Arch
-sudo pacman -S ffmpeg
+videodl --version                 # or: node src/cli.js --version (from a checkout)
+git -C <checkout> log --oneline -1
 ```
-</details>
 
-<details>
-<summary>macOS</summary>
+## Architecture
+
+```
+            user / backend (container web UI, scripts)
+                         |
+                  src/cli.js  (commander)
+     download | dl-convert | convert | extract | download-json | generate-cookies | ...
+          |                   |                         |
+  src/extractors/index.js     |                 src/converter.js (ffmpeg wrapper)
+  (47 native + ytdlp + direct) |
+          |                   |
+  extractVideoInfo() -> formats, subtitles, chapters, headers, cookies, DRM flag
+          |
+  src/downloader.js  (HTTP stream, HLS via ffmpeg, DASH merge via ffmpeg)
+     |          |                |                      |
+  url-guard.js  cf-solver.js   cycletls-helper.js     ffmpeg-helper.js
+  (SSRF)        (curl / cycletls) (index helper binary) (PATH, or ~/.videodl-cli/ffmpeg)
+          |
+  solver-loader.js -> solver-sandbox.js (child, --permission) -> solver-host.js
+                      (YouTube player JS, src/vendor/yt.solver.core.js)
+  cookies.js, cookie-generator.js (Puppeteer), captcha-solver.js, drm-detect.js
+```
+
+Key points for a reader who changes the code:
+
+- Every extractor is a class that extends `BaseExtractor` (`src/extractors/base.js`). `canHandle(url)` matches the hostname with `hostMatches()`, never a substring.
+- The registry order matters: native extractors first, `YtdlpExtractor` second to last, `DirectExtractor` last.
+- Output names go through `resolveOutputFilename()`; URLs that are fetched go through `assertPublicUrl()`.
+- The binary is built with `build.mjs` (esbuild bundle, then Node SEA with postject). The CycleTLS helper is a separate Go executable that must sit next to the binary.
+- Subtitle policy is in `resolveSubtitleDownloads()` and `parseRequestedLangs()` in `src/cli.js`. The default list is `DEFAULT_SUB_LANGS`, currently empty.
+- There is no database and no server. State is the cookie file, the login file, the downloads folder and the ffmpeg cache.
+
+## Commands (verified)
+
+Run these from the checkout root, in a shell. On a Windows share, call scripts with `bash <script>`, because the executable bit can be lost when the file is copied through the share.
+
+### Run the CLI from a checkout
 
 ```bash
-brew install ffmpeg
+node src/cli.js --version              # Verified 2026-10-31 on the build host (Node v22.22.2): 2.0.139
+node src/cli.js extractors --json      # Verified 2026-10-31: 49 entries
+node src/cli.js --help                 # Verified 2026-10-31: the full command list
+node src/cli.js download --help        # Verified 2026-10-31: every download option
+npm start -- download --list-formats "https://example.com/video"   # (not verified: needs network)
 ```
-</details>
 
-Or skip manual installation — videodl will auto-download a static ffmpeg build to `~/.videodl-cli/ffmpeg/` on first use.
-
-## Installation
-
-### From Source
+### Tests
 
 ```bash
-cd videodl-cli
-npm install
-npm link          # makes 'videodl' available globally (optional)
+npm test                               # runs: python3 tests/smoke.py --source (needs network) (not verified in the 2026-10-31 pass)
+python3 tests/smoke.py --source --filter pornhub
+python3 tests/smoke.py --binary dist/videodl-ffmpeg-linux
+python3 tests/smoke.py --image ghcr.io/hemues/videodl:candidate     # podman run (container release gate)
+python3 tests/smoke.py --deployed videodl                           # podman exec into the live container
 ```
 
-### Using Setup Scripts
-
-```powershell
-# Windows
-.\setup-windows.ps1
-```
+### Build
 
 ```bash
-# Linux / macOS
-chmod +x setup.sh
-./setup.sh
+npm run build                          # node build.mjs (host target)
+bash compile.sh                        # Linux build; all targets; npm ci; checks build-pins.json
+bash compile.sh --bundle-only          # CJS bundle only
+bash compile.sh --no-ffmpeg            # binaries without the embedded ffmpeg
+bash compile.sh --clean                # clean dist/ first
 ```
 
-The setup scripts check for Node.js and ffmpeg, install dependencies, and optionally run `npm link`.
+Windows: `.\compile.ps1` (add `-Linux` to cross-build the Linux binary, `-BundleOnly`, `-Clean`). Build outputs go to `dist/`, which is not tracked. (Not verified in the 2026-10-31 pass.)
 
-### Standalone Binary
-
-Pre-built binaries require no Node.js installation. Download the latest release from the [GitHub Releases](https://github.com/Hemues/videodl-script/releases) page, or build from source — see [Building Standalone Binaries](#building-standalone-binaries).
-
-### Releases
-
-Compiled binaries are published as GitHub Release assets (not tracked in git):
-
-| Asset | Description |
-|-------|-------------|
-| `videodl-linux` / `videodl-ffmpeg-linux` | Linux x64 — plain (downloads ffmpeg on first use) / ffmpeg embedded |
-| `videodl-linux-arm64` / `videodl-ffmpeg-linux-arm64` | Linux arm64 — plain / ffmpeg embedded |
-| `videodl.exe` / `videodl-ffmpeg.exe` | Windows x64 — plain / ffmpeg embedded |
-| `videodl-x86.exe` | Windows 32-bit — plain only (no 32-bit ffmpeg or CycleTLS helper exist upstream) |
-| `cycletls-index-linux` / `cycletls-index-linux-arm64` / `cycletls-index-windows.exe` | CycleTLS TLS-fingerprint helper — place it next to the binary as `index` / `index-arm64` / `index.exe` |
-| `SHA256SUMS` | sha256 of every asset above — verify your download: `sha256sum -c --ignore-missing SHA256SUMS` |
-
-All binaries are cross-built from one pinned Node.js + ffmpeg (see [BUILD.md](BUILD.md)).
-
-Download from: **https://github.com/Hemues/videodl-script/releases**
-
-## Usage
-
-### Download a Video
+### Upstream update pipeline (maintainer, build host only)
 
 ```bash
-# Auto-detect site, default quality (best available)
-videodl download "https://www.xvideos.com/video12345/example"
-
-# Specify quality
-videodl download -f 1080p "https://www.pornhub.com/view_video.php?viewkey=abc"
-
-# Best available quality
-videodl download -f best "https://xhamster.com/videos/example-123"
-
-# List available formats without downloading
-videodl download --list-formats "https://www.xvideos.com/video12345/example"
-
-# Custom output directory and filename
-videodl download -d ~/Videos -o myvideo.mp4 "https://example.com/video.mp4"
-
-# Skip adding domain to filename
-videodl download --no-base-url "https://example.com/video.mp4"
+bash update-from-upstream.sh status
+bash update-from-upstream.sh check
+bash update-from-upstream.sh run --dry-run
 ```
 
-### URL Shorthand
-
-You can omit the `download` command — a bare URL is treated as a download:
-
-```bash
-videodl "https://www.xvideos.com/video12345/example"
-```
-
-### Download with Cookies
-
-```bash
-# Use a Netscape cookie file (same format as yt-dlp / curl)
-videodl download --cookies cookies/cookies.txt "https://members.example.com/video/123"
-
-# Auto-regenerate expired cookies from logins file
-videodl download --generate-cookies "https://members.example.com/video/123"
-
-# Force cookie regeneration (even if they appear valid)
-videodl download --force-cookies "https://members.example.com/video/123"
-
-# Show browser during cookie generation (for manual CAPTCHA)
-videodl download --generate-cookies --no-headless "https://example.com/video"
-```
-
-### Download with Subtitles
-
-By default, **English + Hungarian** subtitles are downloaded and embedded
-into the output container (`.mkv` for multi-track merges, `.mp4` otherwise).
-For each language the CLI follows this fallback chain:
-
-1. Official / manually authored track in that language. Matching is
-   case-insensitive and also accepts display-name aliases — for
-   example a track uploaded under the name "Magyar" counts as `hu`.
-2. Auto-generated (ASR) track in that language if no manual track exists.
-3. YouTube's auto-translate API (same feature as *Feliratok →
-   Automatikus fordítás* in the web UI) if neither native track
-   exists but the language is in the video's translation list.
-4. Skip (nothing available).
-
-YouTube's `&tlang=` auto-translate endpoint is aggressively rate-limited
-for anonymous requests — if you hit `HTTP 429` on the translate step,
-pass a cookies file via `--cookies cookies.txt` (exported from your
-browser in Netscape/Mozilla format) and the translated track will
-succeed.
-
-```bash
-# Default: English + Hungarian, manual preferred, ASR fallback, skip otherwise
-videodl download "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Limit to a single language (same fallback chain applies)
-videodl download --sub-lang en "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Multiple specific languages (comma-separated)
-videodl download --sub-lang en,hu,de,fr "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Every native track + every translation language YouTube exposes
-videodl download --sub-lang all "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Every native track ONLY (no auto-translate fill)
-videodl download --sub-lang all --no-sub-translate-missing "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-
-# Skip subtitles entirely
-videodl download --no-subtitles "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-videodl download --no-subtitle  "https://www.youtube.com/watch?v=dQw4w9WgXcQ"   # alias
-
-# Explicit auto-translate to Hungarian (single output track)
-videodl download --sub-translate hu "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-```
-
-### Download Playlists & Channels
-
-When a YouTube playlist or channel URL is provided, videodl-cli automatically
-creates a subdirectory (named after the playlist or channel) and downloads all
-videos into it.
-
-```bash
-# Download entire playlist into ./downloads/Playlist_Name/
-videodl download "https://www.youtube.com/playlist?list=PLxxx"
-
-# Download a playlist linked from a video URL
-videodl download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
-
-# Channel videos
-videodl download "https://www.youtube.com/@ChannelName"
-
-# Machine-readable (JSON progress for each entry)
-videodl download-json "https://www.youtube.com/playlist?list=PLxxx"
-```
-
-### Convert a Video
-
-```bash
-# Basic format conversion
-videodl convert input.mkv output.mp4
-
-# With codecs, resolution, bitrate
-videodl convert input.mp4 output.mp4 -vc libx265 -ac aac -s 1280x720 -vb 2M -ab 128k
-
-# Change frame rate
-videodl convert input.mp4 output.mp4 -r 30
-```
-
-### Download and Convert
-
-```bash
-# One step
-videodl dl-convert "https://example.com/video.mp4" output.mp4 -vc libx265
-
-# Keep original downloaded file
-videodl dl-convert "https://example.com/video.mp4" output.mp4 --keep-original
-```
-
-### Cookie Management
-
-```bash
-# Generate cookies (only refreshes expired ones)
-videodl generate-cookies
-
-# Force regenerate all
-videodl generate-cookies --force
-
-# Interactive browser login — manually log in, cookies are captured
-videodl browser-login "https://members.example.com/login"
-```
-
-### Information Commands
-
-```bash
-videodl sites                # List supported sites
-videodl extractors           # List extractors with URL patterns
-videodl extractors --json    # Machine-readable extractor list
-videodl probe video.mp4      # Show media file metadata
-videodl probe video.mp4 -j   # JSON output
-videodl info                 # ffmpeg version and path
-videodl formats              # Supported output formats
-videodl codecs               # Supported codecs
-```
-
-### Machine-Readable Output (for Backend Integration)
-
-```bash
-# JSON extraction (no download)
-videodl extract "https://www.xvideos.com/video12345/example"
-
-# JSON progress during download
-videodl download-json "https://www.xvideos.com/video12345/example"
-```
-
-## All CLI Options
-
-```
-Download Options:
-  -o, --output <filename>      Output filename
-  -d, --directory <path>       Output directory (default: ./downloads)
-  -f, --format <quality>       Quality: best, worst, 720p, 1080p (default: best)
-  -H, --header <header>        Custom HTTP header (repeatable)
-      --list-formats           List formats without downloading
-      --no-base-url            Omit domain from filename
-      --no-ssl-verify          Disable SSL verification
-      --proxy <url>            HTTP/SOCKS proxy
-
-Cookie Options:
-      --cookies <file>         Netscape cookie file (default: cookies/cookies.txt)
-      --generate-cookies       Auto-refresh expired cookies
-      --force-cookies          Force cookie regeneration
-      --no-headless            Show browser during cookie generation
-      --logins <file>          Login file (default: logins/logins.txt)
-
-CAPTCHA Options:
-      --captcha-provider <id>  "wit" (free) or "2captcha" (paid)
-      --captcha-key <key>      API key (or set env CAPTCHA_API_KEY)
-
-Subtitle Options:
-      --no-subtitles           Skip subtitles (default: all detected
-                                 manual + auto-generated tracks are
-                                 downloaded and embedded)
-      --no-subtitle            Alias of --no-subtitles
-      --sub-lang <lang>        Language code (en, hu, de, or "all")
-      --sub-translate <lang>   Auto-translate to language
-
-Conversion Options:
-  -vc, --video-codec <codec>   Video codec (libx264, libx265, vp9, ...)
-  -ac, --audio-codec <codec>   Audio codec (aac, mp3, opus, ...)
-  -vb, --video-bitrate <br>    Video bitrate (e.g., 2M, 5000k)
-  -ab, --audio-bitrate <br>    Audio bitrate (e.g., 128k, 320k)
-  -s,  --resolution <res>      Resolution (e.g., 1920x1080)
-  -r,  --fps <fps>             Frame rate
-  -q,  --quality <q>           Quality factor (1-31, lower = better)
-      --no-overwrite           Don't overwrite existing files
-      --keep-original          Keep original after dl-convert
-```
-
-## Building Standalone Binaries
-
-videodl can be compiled into standalone executables that require no Node.js installation.
-
-### Windows
-
-```powershell
-.\compile.ps1                    # Windows binary
-.\compile.ps1 -Linux             # + cross-compile Linux binary
-.\compile.ps1 -BundleOnly        # CJS bundle only (no binary)
-.\compile.ps1 -Clean             # Clean dist/ first
-.\compile.ps1 -Clean -Linux      # Clean + both platforms
-```
-
-### Linux
-
-```bash
-chmod +x compile.sh
-./compile.sh                     # Linux binary
-./compile.sh --bundle-only       # CJS bundle only
-./compile.sh --clean             # Clean dist/ first
-```
-
-### Output
-
-| File | Description | Size |
-|------|-------------|------|
-| `dist/videodl.exe` | Windows x64 standalone | ~92 MB |
-| `dist/videodl-linux` | Linux x64 standalone | ~117 MB |
-| `dist/videodl.cjs` | Portable CJS bundle (needs Node.js) | ~5.5 MB |
-| `dist/index` (Linux) / `dist/index.exe` (Windows) | CycleTLS Go sidecar binary | ~8 MB |
-
-The build pipeline uses **esbuild** for bundling and **Node.js SEA** (Single Executable Application) for binary creation. See [BUILD.md](BUILD.md) for technical details.
-
-> **CycleTLS sidecar:** Several extractors (SpankBang, 9GAG, Dailymotion, Bitchute)
-> and the Cloudflare bypass module require the CycleTLS Go helper binary to be in
-> the same directory as the main executable. The build script copies it automatically
-> to `dist/`. When deploying the binary, always keep the sidecar alongside it.
-
-## Cookie & Login Setup
-
-Some sites (e.g., Brazzers) require authentication. videodl supports two approaches:
-
-### 1. Manual Cookie File
-
-Export cookies from your browser using a cookie-export extension (e.g., "Get cookies.txt LOCALLY"), then:
-
-```bash
-videodl download --cookies path/to/cookies.txt "https://example.com/video"
-```
-
-### 2. Automated Cookie Generation
-
-1. Copy the example file:
-   ```bash
-   cp logins/logins.txt.example logins/logins.txt
-   ```
-2. Edit `logins/logins.txt` with your credentials:
-   ```
-   https://members.example.com/login::username::password
-   ```
-3. Generate cookies:
-   ```bash
-   videodl generate-cookies
-   ```
-
-Cookies are saved to `cookies/cookies.txt` and reused automatically. Use `--generate-cookies` with download commands to auto-refresh expired cookies.
-
-> **Security:** Never commit `cookies/cookies.txt` or `logins/logins.txt` to git. They are excluded by `.gitignore`. Only the `.example` files are tracked.
-
-## YouTube Premium Enhanced Bitrate
-
-When a cookie file contains valid YouTube Premium session credentials, videodl automatically detects and prefers **enhanced bitrate** (Premium) formats. These formats provide significantly higher video bitrate at the same resolution — for example, a 1080p Premium stream may have 2–3× the bitrate of the standard 1080p stream, resulting in noticeably better visual quality.
-
-**How it works:**
-
-1. Provide a cookie file from a browser session where you are logged into a YouTube Premium account
-2. videodl detects formats marked as "Premium" by YouTube's API (`qualityLabel` contains "Premium")
-3. When Premium formats are available, videodl automatically **upgrades** the resolution — for example, requesting 720p will download **1080p Premium** if available, giving you the best possible quality
-4. If no Premium formats are found at or above the requested resolution, the standard format at the requested quality is used
-
-**Premium upgrade logic:**
-
-| Requested | Available Premium | Result |
-|-----------|------------------|--------|
-| 720p | 1080p Premium, 720p Premium | **1080p Premium** (best Premium) |
-| 720p | 720p Premium only | **720p Premium** |
-| 1080p | 1080p Premium | **1080p Premium** |
-| 720p | _(none — session expired)_ | 720p standard + warning |
-
-**Expired cookie detection:**
-
-videodl automatically detects when YouTube session cookies have expired (`LOGGED_IN=false`). When this happens:
-
-- If `--generate-cookies` is set and a login entry exists → cookie refresh is attempted, then re-extraction
-- Otherwise → a warning is logged (`YouTube session expired — Premium formats unavailable`) and the download continues with standard formats
-- The `__Secure-1PSID` cookie expiry is also checked before extraction begins
-
-> **Tip:** YouTube login cannot be automated (Google's anti-bot protection). When cookies expire, re-export them manually from your browser using an extension like "Get cookies.txt LOCALLY".
-
-**Usage:**
-
-```bash
-# Download with YouTube Premium cookies — Premium formats are selected automatically
-videodl download --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# List formats to see which ones are Premium (marked with ★)
-videodl download --list-formats --cookies cookies/cookies.txt "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Auto-attempt cookie refresh if expired (requires logins.txt)
-videodl download --cookies cookies/cookies.txt --generate-cookies "https://www.youtube.com/watch?v=VIDEO_ID"
-```
-
-**Requirements:**
-
-- A valid YouTube Premium subscription on the account
-- Cookies exported from a browser session logged into that account
-- Premium formats are not available for all videos — only those where YouTube serves enhanced bitrate variants
-
-> **Note:** Without Premium cookies, standard formats are downloaded as usual. The feature is fully automatic — no additional CLI flags are needed.
-
-## Programmatic API
-
-```javascript
-import { VideoDownloader } from './src/downloader.js';
-import { VideoConverter } from './src/converter.js';
-import { extractVideoInfo, listSupportedSites } from './src/extractors/index.js';
-
-// Extract video info
-const info = await extractVideoInfo('https://www.xvideos.com/video12345/example');
-console.log(info.title, info.formats);
-
-// Download with progress
-const downloader = new VideoDownloader();
-downloader.on('progress', ({ percent }) => console.log(`${percent}%`));
-await downloader.download({
-  url: 'https://example.com/video.mp4',
-  filename: 'output.mp4',
-  directory: './downloads'
-});
-
-// Convert
-const converter = new VideoConverter();
-await converter.convert('input.mp4', 'output.mkv', {
-  videoCodec: 'libx264',
-  audioCodec: 'aac'
-});
-```
-
-See [examples.js](examples.js) for more usage patterns.
-
-## Project Structure
-
-```
-videodl-cli/
-├── src/
-│   ├── cli.js                 # CLI entry point (commander.js)
-│   ├── index.js               # Programmatic API exports
-│   ├── downloader.js          # HTTP/HLS/DASH download engine
-│   ├── converter.js           # ffmpeg conversion wrapper
-│   ├── cookies.js             # Netscape cookie parser
-│   ├── cookie-generator.js    # Browser-based login automation
-│   ├── cf-solver.js           # Cloudflare WAF bypass (cycletls)
-│   ├── captcha-solver.js      # reCAPTCHA v2 solver (wit.ai / 2captcha)
-│   ├── solver-loader.js       # YouTube signature solver loader
-│   ├── ffmpeg-helper.js       # Auto-download ffmpeg if missing
-│   ├── help.js                # CLI help text
-│   ├── extractors/
-│   │   ├── index.js           # Extractor registry (45 sites)
-│   │   ├── base.js            # BaseExtractor class
-│   │   ├── youtube.js         # YouTube extractor
-│   │   ├── xhamster.js        # xHamster extractor
-│   │   ├── pornhub.js         # PornHub extractor
-│   │   ├── xvideos.js         # XVideos extractor
-│   │   ├── facebook.js        # Facebook extractor
-│   │   ├── vimeo.js           # Vimeo extractor
-│   │   ├── dailymotion.js     # Dailymotion extractor (cycletls)
-│   │   ├── twitch.js          # Twitch clips & VODs (GQL API)
-│   │   ├── reddit.js          # Reddit video extractor
-│   │   ├── twitter.js         # Twitter/X extractor (fxtwitter API)
-│   │   ├── tiktok.js          # TikTok extractor
-│   │   ├── instagram.js       # Instagram extractor
-│   │   ├── streamable.js      # Streamable extractor
-│   │   ├── rumble.js          # Rumble extractor
-│   │   ├── odysee.js          # Odysee/LBRY extractor
-│   │   ├── spankbang.js       # SpankBang extractor (cycletls)
-│   │   ├── 9gag.js            # 9GAG extractor (cycletls)
-│   │   ├── eporner.js         # Eporner extractor
-│   │   └── ...                # More site extractors
-│   ├── cookie-extractors/
-│   │   └── brazzers/          # Brazzers-specific login automation
-│   └── vendor/
-│       └── yt.solver.core.js  # YouTube cipher solver
-├── cookies/
-│   └── cookies.txt.example    # Example cookie file format
-├── logins/
-│   └── logins.txt.example     # Example login credentials format
-├── build.mjs                  # Build script (esbuild + SEA)
-├── sea-config.json            # Node.js SEA configuration
-├── compile.ps1                # Windows build wrapper
-├── compile.sh                 # Linux build wrapper
-├── setup-windows.ps1          # Windows setup script
-├── setup.sh                   # Linux/macOS setup script
-├── package.json               # npm package manifest
-├── examples.js                # Programmatic API examples
-└── test-extractor.js          # Generic extractor test tool
-```
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [INSTALL.md](INSTALL.md) | Detailed installation guide |
-| [QUICKSTART.md](QUICKSTART.md) | Quick reference card |
-| [BUILD.md](BUILD.md) | Build system internals (esbuild + SEA) |
-| [LINUX-GUIDE.md](LINUX-GUIDE.md) | Linux tips (systemd, cron, aliases) |
-| [EXTRACTORS.md](EXTRACTORS.md) | Extractor architecture & how to add sites |
-| [ADD-BASE-URL-FEATURE.md](ADD-BASE-URL-FEATURE.md) | `--no-base-url` feature details |
-| [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md) | YouTube download restrictions |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
+The pipeline needs `/etc/videodl-upstream.env` (private, never in git; template `contrib/systemd/videodl-upstream.env.example`). Exit codes: 0 nothing to do or promoted, 3 human action required (client-table diff or a red gate, nothing deployed), 1 error. The weekly timer is `contrib/systemd/videodl-upstream-update.timer`. (Not verified in the 2026-10-31 pass.)
+
+## Configuration reference
+
+Every setting is a command line option or an environment variable. There is no config file. Full tables are in `docs/HOWTO-USE.md` section 4.
+
+| Name | Default | Read in | Meaning | Change when |
+| --- | --- | --- | --- | --- |
+| `VIDEODL_ALLOW_PRIVATE_URLS` | unset | `src/cli.js`, `src/url-guard.js` | `1` allows private and LAN URLs | downloading from your own LAN server |
+| `VIDEODL_SOLVER_UNSANDBOXED` | unset | `src/solver-sandbox.js` | `1` runs the solver without the sandbox (warning printed) | debugging the solver only |
+| `VIDEODL_CAPTCHA_PROVIDER` | `wit` | `src/captcha-solver.js`, `src/cookie-generator.js` | `wit` or `2captcha` | paid solver |
+| `VIDEODL_CAPTCHA_API_KEY` | unset | the same files | solver key (secret, never in git) | CAPTCHA solving needed |
+| `CAPTCHA_PROVIDER`, `CAPTCHA_API_KEY` | unset | the same files and `src/cli.js` | short forms of the two above (secret for the key) | legacy setups |
+| `NODE_OPTIONS` | set by the CLI for its child only | `src/solver-sandbox.js` | carries `--permission` to the solver child | never set by hand |
+| `LOCALAPPDATA`, `PROGRAMFILES` | system | `src/cli.js`, `src/cookie-extractors/brazzers/aylo.js` | browser search on Windows | a browser is not found |
+| `PATH` | system | `src/cli.js`, `src/ffmpeg-helper.js` | ffmpeg, yt-dlp and helper lookup | a tool is not found |
+| `-d/--directory` | `./downloads` | `src/cli.js` | output folder | every run that needs another folder |
+| `--cookies` | `cookies/cookies.txt` | `src/cli.js`, `src/cookies.js` | Netscape cookie file (secret) | a different session |
+| `--logins` | `logins/logins.txt` | `src/cookie-generator.js` | login lines `url::user::pass` (secret) | cookie generation |
+| `--sub-lang` | none (no subtitles) | `src/cli.js` | subtitle codes or `all` | you want subtitles |
+| `--sub-translate` | none | `src/cli.js` | one auto-translated track | you want a translation |
+| `--no-sub-translate-missing` | off | `src/cli.js` | skip the `all` translate fill | `--sub-lang all` is too slow |
+| `--audio-lang` | auto-detect | `src/cli.js` | audio track language or `all` | a multi-language video |
+| `-f/--format` | `best` | `src/cli.js` | quality | a fixed height |
+| `--proxy` | none | `src/cli.js`, `src/downloader.js` | HTTP or SOCKS proxy | a network needs it |
+| `--no-ssl-verify` | verified | `src/cli.js` | TLS verification off for one run | never in scripts |
+
+The bundled `contrib/systemd/videodl-upstream.env.example` lists the updater variables (checkout directories, deploy user, updater path, image name, state directory). Those values are host-specific and are not kept in this public repository.
+
+## Upstream components and versions
+
+The pins that matter for the build are in `build-pins.json` (Node.js, the BtbN ffmpeg release branch and its archive sha256) and in `src/vendor/ejs.lock.json` (the solver, `yt-dlp/ejs 0.8.0`). The npm tree is pinned by `package-lock.json`, and `compile.sh` installs it with `npm ci`. The yt-dlp Python package is pinned in the container repository, not here. The InnerTube client table in `src/extractors/youtube.js` is synced by hand (the pipeline reports the diff). Changing a pin is a deliberate act with a new sha256; see `BUILD.md`.
 
 ## Troubleshooting
 
-### "ffmpeg not found"
+Each entry has the exact text where the code has it. The full list with fixes is in `docs/HOWTO-USE.md` section 8.
 
-videodl auto-downloads ffmpeg on first use. If that fails, install it manually (see [Prerequisites](#prerequisites)).
+### `ffmpeg not found. Please install ffmpeg and ensure it's in your PATH`
+Cause: no ffmpeg on the PATH and the download did not run. Fix: install ffmpeg, or let videodl download a static build to `~/.videodl-cli/ffmpeg/` (first use).
 
-### SSL Certificate Errors
+### `points at a private/internal address (<host>); refusing. Use --allow-private-urls to override.`
+Cause: the SSRF guard. Fix: `--allow-private-urls` for your own LAN host only.
 
-```bash
-videodl download --no-ssl-verify "https://example.com/video.mp4"
-```
+### `Output filename "<name>" would escape the download directory <dir>`
+Cause: `-o` contained `..` or resolved outside `-d`. Fix: plain file name in `-o`, folder in `-d`.
 
-### 403 Forbidden on YouTube
+### `Found 0 formats` on PornHub, or `HTTP 410 Gone` for every quality
+Cause: the CDN choice per page load and the missing session cookies (LESSONS #19). Fix: update to 2.0.139, load the page again, pass `--cookies`.
 
-Most YouTube videos download fine (up to 2160p) via the primary `ANDROID_VR`
-client. A persistent 403 usually means either an **age-restricted / token-gated**
-video (needs a `gvs` PO token — deferred, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
-or that YouTube changed its clients and the table needs re-syncing with yt-dlp —
-run `./update-from-ytdlp.sh check` (see [UPDATE-FROM-YTDLP.md](UPDATE-FROM-YTDLP.md)).
+### `HTTP 429 Too Many Requests` on subtitles
+Cause: the YouTube auto-translate endpoint throttles anonymous requests (LESSONS #29). Fix: `--cookies`, fewer languages.
 
-### Cookie Errors
+### `HTTP 403 Forbidden` on a YouTube media URL
+Cause: the InnerTube client table is out of date, or the video needs a PO token (LESSONS #14). Fix: the sync process, not a hand edit.
 
-```bash
-# Regenerate cookies
-videodl generate-cookies --force
+### `YouTube session expired - Premium formats unavailable`
+Cause: the YouTube cookies expired. Fix: export the cookies again from a logged-in browser.
 
-# Or manually log in via browser
-videodl browser-login "https://example.com/login"
-```
+### `DRM-protected: <systems>`
+Cause: the stream is DRM-protected. videodl does not decrypt it and will not. No fix exists on this side.
 
-### Cloudflare-Protected Sites
+### `Executable not found` for SpankBang, 9GAG, Dailymotion or Bitchute
+Cause: the CycleTLS helper (`index` or `index.exe`) is not next to the binary (quoted in the CHANGELOG 2.0.10 entry). Fix: copy the helper into the same folder.
 
-Handled automatically via TLS fingerprint impersonation (cycletls). No user action needed.
+### The downloaded video is only 4 seconds long
+Cause: the ffmpeg master snapshot of release 2.0.136 (superseded on 2026-09-13). Fix: use the pinned release-branch ffmpeg; run the smoke gate on the binary (LESSONS #18 item 8).
+
+### No subtitles were downloaded
+Cause: the default is no subtitles (see "Known gaps"). Fix: `--sub-lang en,hu`.
+
+## Release and deploy
+
+The short version of the release flow, with the owner rules:
+
+1. Bump `package.json`, the CHANGELOG heading and the `compile.sh` version (the commit `8078227` is an example of a version-only release commit).
+2. Build and test: `bash compile.sh` (all targets), then `python3 tests/smoke.py --binary <binary>` on each binary you ship.
+3. Create the GitHub release with the binaries and `SHA256SUMS`, using `gh` on the build host. Verify the uploaded asset by downloading it and running `--version`, because the version is baked in at build time (LESSONS #10, #11).
+4. The container image is built by the sibling repository, which runs `tests/smoke.py --image` on the candidate and `--deployed` on the running container. Read that repository's README for the image steps.
+5. The upstream pipeline (`update-from-upstream.sh`) builds, gates and, only when the gate is green, publishes a yt-dlp or solver update. It never edits the InnerTube client table; that stays a human decision.
+
+Owner rules that apply here: uploads (git push, release creation) are made on the build host as root, which holds the GitHub CLI token. Never push from the Windows side of a network share (stale index). Nothing is deployed to production without the owner's word.
+
+## Documentation map
+
+| File | Purpose |
+| --- | --- |
+| `README.md` | This file: what the tool is, the current version, architecture, commands, configuration |
+| `docs/HOWTO-USE.md` | Operator manual: install, every option, examples, troubleshooting, per-site limits |
+| `AGENTS.md` | Rules and traps for anyone (human or agent) changing this repository |
+| `CHANGELOG.md` | What changed in each version, newest first |
+| `LESSONS-LEARNED.md` | Numbered postmortems: symptom, root cause, fix, rule |
+| `STORYLINE.md` | The development story by phase, with commits and decisions |
+| `REVIEW-2026-09-13.md` | Code and security review of 2026-09-13 |
+| `UPDATE-FROM-YTDLP.md` | Runbook for the yt-dlp and solver update pipeline |
+| `YOUTUBE-LIMITATIONS.md` | What YouTube downloads can and cannot do |
+| `EXTRACTORS.md` | How extractors are built and how to add a site |
+| `BUILD.md` | Build system internals (esbuild, SEA, pins) |
+| `INSTALL.md`, `QUICKSTART.md`, `LINUX-GUIDE.md`, `STRUCTURE.md` | Older guides. They were kept as they are and were not re-checked against the code in the 2026-10-31 pass. Where they disagree with `docs/HOWTO-USE.md`, the HOWTO and the code win |
+| `ADD-BASE-URL-FEATURE.md` | Details of `--no-base-url` |
+| `LESSONS-LEARNED-GUIDE.md` | How the lessons file is written |
+
+## Known gaps and open decisions (2026-10-31)
+
+- **Subtitle default.** The code default is no subtitles (`DEFAULT_SUB_LANGS = []`, since commit `dbcea2e`, 2026-04-25). The help text partly says English and Hungarian is the default, and the old README did too. The owner must decide which is right; then the code, the help and the README are made to agree. LESSONS #21.
+- **A tracked symlink.** `.compile.unix.sh` is a symlink (mode 120000) to `/tmp/compile.unix.sh`, committed by `41e066b` (2026-07-21). It should be removed in its own commit. LESSONS #23.
+- **Executable bits.** Every tracked file is mode 100755 at HEAD, after mode-only commits in 2026-03, 2026-04 and 2026-07. A Windows checkout needs `git config core.fileMode false` to show the truth. LESSONS #24.
+- **Old commits still contain the home-lab text** that commit `f9d8706` removed from the current tree. A history rewrite is an owner option, not an agent action. LESSONS #22.
+- **CHANGELOG dates.** The 2.0.10 heading says 2026-07-17 and 2.0.30 says 2026-03-21, while the git dates are in March. LESSONS #30.
+- **Outdated statements kept for the record.** "By default, English + Hungarian subtitles are downloaded" (outdated since 2026-04-25, commit `dbcea2e`: the default is none, pending the owner decision above). "45 site extractors" in the feature list (outdated since 2026-10-31: the registry has 47 native extractors). "last git tag v2.0.99" (outdated since 2026-10-03: see the version table). "update-from-ytdlp.sh" (outdated since 2026-09-13, commit `2b16a56`: the file is `update-from-upstream.sh`).
+- **PO-token minting** for age-restricted videos is deferred. The reference code is in `contrib/po-token-provider.mjs`. LESSONS #14.
+- **Two clones on the owner's network.** A second local clone of this repository exists on the build network. One clone is the working clone; the other is a mirror that must be pulled after every push and never edited. This note names no paths on purpose (public repository). LESSONS #22.
 
 ## License
 
@@ -667,7 +321,8 @@ Handled automatically via TLS fingerprint impersonation (cycletls). No user acti
 
 ## Credits
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — CLI design inspiration
-- [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp) — architecture inspiration
-- [ffmpeg](https://ffmpeg.org/) — media processing engine
-- [esbuild](https://esbuild.github.io/) — JavaScript bundler
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp): CLI design inspiration, and the source of the fallback and the solver.
+- [Video DownloadHelper](https://github.com/aclap-dev/vdhcoapp): architecture inspiration.
+- [ffmpeg](https://ffmpeg.org/): media processing engine. The pinned build is from BtbN.
+- [esbuild](https://esbuild.github.io/): JavaScript bundler.
+- CycleTLS (Go helper binary): TLS fingerprint impersonation for the Cloudflare-protected and TLS-fingerprint-checked sites.

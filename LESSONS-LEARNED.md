@@ -28,6 +28,17 @@ Entries marked ✅ are verified in production. Entries marked ⏳ are pending ve
 17. [IndaPlay/IndaEvents — find the *host*, and never trust a 200 or a page's first video](#17--indaplayindaevents--find-the-host-and-never-trust-a-200-or-a-pages-first-video)
 18. [Security hardening 2026-09-13: the fixes and what they taught](#18--security-hardening-2026-09-13-the-fixes-and-what-they-taught)
 19. [PornHub — two HLS CDNs per page load, and `get_media` needs the session cookies](#19--pornhub--two-hls-cdns-per-page-load-and-get_media-needs-the-session-cookies)
+20. CRLF lost in the 2026-10-13/14 documentation audit commit, restored by the next commit (added 2026-10-31)
+21. Subtitle default changed to "none" inside a commit about MAX_PATH; the docs still say English + Hungarian (added 2026-10-31)
+22. Home-lab details in a public repository; removed from the tree, still in history (added 2026-10-31)
+23. Accidental symlink `.compile.unix.sh` committed by a sync commit (added 2026-10-31)
+24. Executable bits flipped on every file by Windows checkouts (added 2026-10-31)
+25. Commit subjects "some minor fixes" hide what was fixed (added 2026-10-31)
+26. Binaries shipped without the CycleTLS helper, "Executable not found" (added 2026-10-31)
+27. Skool: data in embedded JSON, Mux referrer rule, cookies by URL (added 2026-10-31)
+28. Playlist result crashed the default download path (added 2026-10-31)
+29. YouTube auto-translate answers 429 to anonymous requests (added 2026-10-31)
+30. Documentation drift: stale tags, file names, counts and CHANGELOG dates (added 2026-10-31)
 
 ---
 
@@ -626,4 +637,136 @@ whenever its CDN answers.
 
 ---
 
-**Last update:** 2026-10-03
+## Entries #20 to #30 (added 2026-10-31)
+
+Numbering continues in ascending order, as in the rest of this file, so that existing references such as "LESSONS #19" stay valid. The newest entries are the last ones in the file. The index of all entries is the table of contents above.
+
+## #20 — CRLF lost in the 2026-10-13/14 documentation audit, restored by the next commit
+
+**Status:** ✅ Verified in git history on 2026-10-31.
+
+- **Version / commit:** 2.0.139; audit commit `28946a3` (author date 2026-10-14 00:13 +0200), restore commit `7ff739d` (2026-10-14 00:13:57 +0200).
+- **Symptom:** the audit commit shows 1,295 inserted and 1,291 deleted lines, although its purpose was a few lines of text:
+
+  ```
+  CHANGELOG.md | 1242 ++++++++++++++++++++++++++---------------------------
+  README.md    | 1344 +++++++++++++++++++++++++++++-----------------------------
+  ```
+
+- **Root cause:** the README and CHANGELOG were CRLF before the audit commit. The audit edit was written with LF line endings (the text of `7ff739d` says so). Nothing counted the carriage returns before the commit, so the whole file changed.
+- **Fix:** `7ff739d` restored CRLF in both files (1,295 lines in each direction, content unchanged). On 2026-10-31 the HEAD copy of README.md has 673 CR bytes, one per line.
+- **Rule:** before a commit of an edited Markdown file, compare `git show HEAD:<file> | tr -cd '\r' | wc -c` with `tr -cd '\r' < <file> | wc -c`. Count carriage returns with `tr`, not with `grep -c $'\r'`, because in Git Bash that counts every line that contains the letter r.
+- **Detection gap:** nothing automatic. The audit text reported the Linux worktree as clean, but nobody compared line endings.
+
+## #21 — Subtitle default changed to "none" inside a commit about MAX_PATH
+
+**Status:** ⏳ Open. Owner decision needed (see "Known gaps" in README.md).
+
+- **Version / commit:** the English + Hungarian default was set by `66d335c` (2026-04-23, CHANGELOG 2.0.58 and 2.0.63). It was removed by `dbcea2e` (2026-04-25), subject "fix: use .mkv instead of .webm for VP9/AV1+Opus, truncate filenames to prevent Windows MAX_PATH overflow". The commit has an empty body and no CHANGELOG line.
+- **Symptom:** the code constant in `src/cli.js` reads `const DEFAULT_SUB_LANGS = [];`, with a comment that an empty list disables subtitles. The `--sub-lang` option text says `Default: none`. The subtitle section of the help text printed by `node src/cli.js download --help` says `en,hu — English + Hungarian (DEFAULT)`. The README section "Download with Subtitles" says English and Hungarian are downloaded by default. Two sources say yes and two say no.
+- **Root cause:** `dbcea2e` changed the constant from `['en', 'hu']` to `[]` and rewrote the comment. The same commit changed the line endings of `src/cli.js` and `src/extractors/base.js` as whole files (about 4,350 changed lines for `src/cli.js`). Ignoring carriage returns, the default change is small, and it was hidden in the whole-file diff. No test pins the default, and the docs were not updated.
+- **Fix:** none yet. The owner must decide whether the default is none or English and Hungarian. Then the constant, the help text (`src/help.js` and the option strings), the README and HOWTO section 5.3 must say the same thing.
+- **Rule:** a default is a product decision. It gets its own commit whose subject or body states the old and the new value, a CHANGELOG line, and a test that pins it. Review a file whose line endings changed with `git diff --ignore-cr-at-eol`.
+- **Detection gap:** no unit test pins `DEFAULT_SUB_LANGS`. Nothing compares the help text with the constant.
+
+## #22 — Home-lab details in a public repository (removed from the tree, still in history)
+
+**Status:** ✅ Fixed in the tree by `f9d8706` (2026-09-13). ⏳ Open in history (owner option).
+
+- **Version / commit:** 2.0.137 to 2.0.139; `f9d8706` "Remove home-lab topology from this public repository".
+- **Symptom:** before 2026-09-13 the docs and the scripts named the build host address, network share paths, a deploy user and uid, LAN service ports, and the path of the host updater. The repository is public (AGENTS.md, CHANGELOG 2.0.139).
+- **Root cause:** documents written for the owner's home lab were committed to a public repository, because the build and deploy notes lived next to the code.
+- **Fix:** `f9d8706` removed the text from docs, comments and scripts. `update-from-upstream.sh` and its systemd unit read every host value from `/etc/videodl-upstream.env` (template `contrib/systemd/videodl-upstream.env.example`). `.gitignore` excludes that file and `local/` and `LOCAL-*.md` notes. `git grep` over the tracked files found no topology markers.
+- **Rule:** never write host names, addresses, share paths, user names, uids or updater paths into this repository. They belong in the private environment file or in the private container repository. Run a `git grep` for them before every push. The notes about the second local clone (README "Known gaps") name no paths for the same reason.
+- **Two clones (documented 2026-10-31):** two local clones of this repository exist on the owner's build network share. One is the working clone; the other is a mirror. After every push the mirror is fast-forwarded to the pushed HEAD, and the mirror is never edited. No paths are written here or in the README, because the repository is public.
+- **Detection gap:** nothing automatic. The old text is still in the history of commits before `f9d8706`. A history rewrite is an owner option and was not done.
+
+## #23 — Accidental symlink `.compile.unix.sh` committed by a sync commit
+
+**Status:** ⏳ Open. The symlink is still tracked at HEAD (`7ff739d`).
+
+- **Version / commit:** the path `.compile.unix.sh` appears in `326bb7b` (2026-04-23, "remove accidental .compile.unix.sh symlink"), `3f3966a` (2026-04-27), `4b94b18` (2026-04-28) and `41e066b` (2026-07-21, "Sync working changes"). The last change left the symlink in HEAD.
+- **Symptom:** on the Linux build host, `git ls-files -s .compile.unix.sh` prints mode `120000`, and `ls -la` shows `.compile.unix.sh -> /tmp/compile.unix.sh`. The file does not exist on any other checkout, so the link is dangling there. On Windows the same path shows as deleted (` D` in `git status`), because a symlink cannot be followed there.
+- **Root cause:** a developer's throwaway wrapper symlink in the working directory was staged by a broad add in a sync commit (`41e066b` has 89 changed files, 87 of them mode-only changes).
+- **Fix:** none yet. Remove the path in its own commit, for example `git rm --cached .compile.unix.sh` and a commit subject that says why. Do this only with the owner's agreement, because the file is part of the tree the owner uses.
+- **Rule:** a sync commit names its paths. `git add -A` is not used for sync commits. Before a commit, check `git ls-files -s | grep '^120000'` and read every symlink.
+- **Detection gap:** nothing fails. On Linux the link works until `/tmp/compile.unix.sh` is looked for.
+
+## #24 — Executable bits flipped on every file by Windows checkouts
+
+**Status:** ⏳ Partly open. History cannot be changed; the working rule is below.
+
+- **Version / commit:** mode-only changes from 100644 to 100755 on 77 to 89 files each in `dd8447e` (2026-03-20), `3d8bb90` (2026-03-20), `7b3a169` (2026-03-20), `9a209ba` (2026-03-20), `4c66a0b` (2026-03-20), `ed5ac11` (2026-03-20), `bb718e8` (2026-04-23), `3f3966a` (2026-04-27) and `41e066b` (2026-07-21).
+- **Symptom:** `git show --stat dd8447e` reports 77 changed files and 0 changed lines. `git diff --ignore-cr-at-eol --shortstat` on the same commit reports 77 files and 0 insertions and 0 deletions. On a Windows checkout `git diff --stat HEAD` reported 110 files changed and 0 lines. At HEAD every tracked file, including `README.md`, `AGENTS.md` and `src/cli.js`, has mode `100755`.
+- **Root cause:** the files were checked out or copied through a Windows share that presents every file as executable. With `core.fileMode` true, git recorded the mode of the copy.
+- **Fix:** none for the history. On a Windows checkout run `git config core.fileMode false`. The Linux read used in the 2026-10-31 pass is `git -c core.fileMode=false status --short`. Owner decision: whether non-script files should be 100644 again (a commit that changes only modes is then needed).
+- **Rule:** read status with `core.fileMode` false. A mode-only diff is not a change. Do not commit a commit whose only change is a mode.
+- **Detection gap:** nothing automatic. `git show --stat` shows the count of files, not that they are mode-only; use `--summary` to see `mode change`.
+
+## #25 — Commit subjects "some minor fixes" hide what was fixed
+
+**Status:** ✅ Recorded. Rule in force from 2026-03-21.
+
+- **Version / commit:** 18 commits on 2026-03-20, among them `9a209ba`, `02c4ac2`, `25c4309`, `dbea660`, `bcbdece`, `63c6453`, `3f36ca8`, `03e0ac7` and `759a501`, have the subject "some minor fixes" or "some minor yt fixes" and one or two changed lines each.
+- **Symptom:** `git log` cannot say which site or which symptom each commit fixed. The later postmortems (for example #14 and #19) had to be rebuilt from the diff.
+- **Root cause:** extractors were debugged against live sites one commit at a time, and the commit subject was a placeholder.
+- **Fix:** none for the history. The CHANGELOG 2.0.10 entry describes the same fixes in prose.
+- **Rule:** a commit subject names the site or the component and the symptom in one line, for example `fix(skool): build title from section breadcrumb`. The commit body holds the verification (what was run, on which URL, with which result).
+- **Detection gap:** none. The subject rule is a convention, not a hook.
+
+## #26 — Binaries shipped without the CycleTLS helper ("Executable not found")
+
+**Status:** ✅ Fixed by `c61c405` (2026-03-20).
+
+- **Version / commit:** the 2.0.1 line; fix `c61c405` "fix: ship CycleTLS Go helper binary alongside SEA binary".
+- **Symptom:** a compiled binary or the container failed with `Executable not found` for SpankBang, 9GAG, Dailymotion (HLS) and Bitchute, and for the Cloudflare bypass. The text is quoted in the CHANGELOG 2.0.10 entry.
+- **Root cause:** `build.mjs` did not copy the Go helper into `dist/`, and `compile.sh` did not include it as a release asset. The source run worked, because the helper was found next to the source.
+- **Fix:** `build.mjs` copies the helper to `dist/`; `compile.sh` includes it as a release asset; `src/cycletls-helper.js` resolves the sidecar for SEA and container runs. The README "Releases" table lists the helper files for every platform.
+- **Rule:** a binary that needs a helper ships with the helper, and the release checklist lists the helper files. Test the binary (`python3 tests/smoke.py --binary <path>`), not only the source.
+- **Detection gap:** a source-only check cannot see a missing sidecar. The smoke gate's `--binary` mode is the check that sees it.
+
+## #27 — Skool: data in embedded JSON, a referrer rule on Mux, cookies by domain
+
+**Status:** ✅ Fixed in 2.0.101 to 2.0.112 (commits `a6ae043` to `63730b5`, 2026-05-09 and 2026-05-10).
+
+- **Version / commit:** 2.0.101 (first classroom extractor) to 2.0.112 (community posts; the number 2.0.111 had been used for the code of 2.0.110, so the release went out as 2.0.112).
+- **Symptom:** lessons returned no video, then `HTTP 403` from the Mux playback URL, then the placeholder title `EOS Club` (a page fetched without the session), then wrong titles for lessons inside sections.
+- **Root cause:** the lesson data sits in the `__NEXT_DATA__` JSON of the server-rendered page, not in the visible HTML. Mux playback is restricted by referrer (`playback_restriction_id`), so the request needs `Referer` and `Origin` of the Skool site. The browser extension read cookies with `{domain: hostname}`, so cookies of the parent domain (`.skool.com`) were not sent.
+- **Fix:** parse `pageProps` from `__NEXT_DATA__`; attach `Referer`, `Origin` and a browser User-Agent to the Mux format; build the title from the breadcrumb of the course tree (sections joined with ` - `, slashes replaced); read cookies with `chrome.cookies.getAll({url})`.
+- **Rule:** read the embedded JSON of a server-rendered page before parsing its HTML. Check the CDN's referrer rule with curl, once without and once with the header, before writing the extractor.
+- **Detection gap:** each release was verified on one live page. The smoke set needs one classroom lesson and one community post. (Not verified whether `tests/smoke-urls.json` holds them.)
+
+## #28 — A playlist result crashed the default download path
+
+**Status:** ✅ Fixed in 2.0.68 (2026-04-23).
+
+- **Symptom:** `Cannot read properties of undefined (reading 'some')` when a YouTube playlist or channel URL was given to `download`.
+- **Root cause:** the code read `videoInfo.formats` for every result. A playlist result has `_type: 'playlist'` and a list of entries, and no `formats` array.
+- **Fix:** detect `_type === 'playlist'` and download each entry by re-running the CLI for it; the playlist title becomes the sub-folder name; the Premium check reads `(videoInfo.formats || [])`.
+- **Rule:** check the result type before reading its fields. Any extractor result can be a playlist.
+- **Detection gap:** not recorded when the playlist case was added to the smoke set (not verified).
+
+## #29 — YouTube auto-translate answers 429 to anonymous requests
+
+**Status:** ✅ Mitigated in 2.0.62 and 2.0.63 (2026-04-23). Still a site limit.
+
+- **Version / commit:** `a8d5118` (2026-04-23, 2.0.62: pacing and backoff) and `d43a770` (2026-04-23, 2.0.63: cookies and headers forwarded).
+- **Symptom:** `HTTP 429 Too Many Requests` on the `&tlang=` auto-translate URL; the translated subtitle track was silently missing.
+- **Root cause:** YouTube limits the translate endpoint for anonymous clients.
+- **Fix:** subtitle downloads are paced (400 ms between files), retried with exponential backoff (up to six attempts, `Retry-After` honoured). Cookies from `--cookies` and browser-like headers are forwarded; with cookies the translate URL succeeds. HOWTO section 5.12 lists the limit.
+- **Rule:** a per-site throttle is handled by pacing and by the logged-in session. Never by parallel requests. Write the limit into the HOWTO.
+- **Detection gap:** no test simulates a 429. The retry path is only exercised by live runs.
+
+## #30 — Documentation drift: stale tags, file names, counts and CHANGELOG dates
+
+**Status:** ✅ README and HOWTO corrected on 2026-10-31. ⏳ CHANGELOG headers left for the owner.
+
+- **Symptom:** README said "45 site extractors" in the feature list and "47" in the introduction; the registry has 47 native extractors (49 entries with yt-dlp and direct). README said "last git tag v2.0.99"; the tags `v2.0.134`, `v2.0.136`, `v2.0.137` and `v2.0.139` exist. README and the troubleshooting section named `update-from-ytdlp.sh`; the file is `update-from-upstream.sh` (renamed in the 2.0.139 security work). CHANGELOG 2.0.139 said "No `v2.0.139` git tag exists"; the tag was created on 2026-10-03. The CHANGELOG 2.0.10 header is dated 2026-07-17, while its commits are from March 2026, and it sits in the file next to the 2.0.30 entry dated 2026-03-21.
+- **Root cause:** the facts were copied from one place into several documents, and the changes of a day did not update the README on the same day. The 2026-10-13/14 audit read only the top of each file.
+- **Fix:** README and HOWTO were rewritten on 2026-10-31 with the checked values, and every outdated statement is marked with its date. The CHANGELOG was not edited in that pass.
+- **Rule:** a version change updates, in the same commit, the README version line, the tag note and every file name that changed. Read the tags with `git tag --sort=creatordate`. Date a CHANGELOG heading with the date of its commits.
+- **Detection gap:** nothing automatic. A small check could `grep` the docs for `update-from-ytdlp` and `v2.0.99`.
+
+---
+
+**Last update:** 2026-10-31
