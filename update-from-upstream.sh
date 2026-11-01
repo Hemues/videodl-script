@@ -47,7 +47,8 @@ if [ -f "$CONFIG_FILE" ]; then
   set -a; . "$CONFIG_FILE"; set +a
 fi
 CLI_DIR="${CLI_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-CONTAINER_DIR="${CONTAINER_DIR:-$(cd "$CLI_DIR/../videodl-container" 2>/dev/null && pwd || echo "$CLI_DIR/../videodl-container")}"
+# The CLI repo lives in scripts/ since 2026-11-02; the container repo stays in containers/ (old sibling layout kept as a fallback).
+CONTAINER_DIR="${CONTAINER_DIR:-$( { cd "$CLI_DIR/../../containers/videodl-container" 2>/dev/null && pwd; } || { cd "$CLI_DIR/../videodl-container" 2>/dev/null && pwd; } || echo "$CLI_DIR/../../containers/videodl-container")}"
 STATE_DIR="${STATE_DIR:-/var/lib/videodl-upstream}"
 REPORT_DIR="$STATE_DIR/reports"
 IMAGE="${IMAGE:-ghcr.io/hemues/videodl}"

@@ -1,5 +1,8 @@
 # videodl-cli
 
+**Location (2026-11-02):** this repository lives in `scripts/videodl-script` (`/storage/Samba/Temp/git/scripts/videodl-script` on 11.1.0.2). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
+
+
 A command line video downloader and converter with 47 native site extractors, DASH and HLS support, cookie-based authentication, subtitle embedding, chapter embedding, a yt-dlp fallback for more than 1000 sites, and standalone binary builds for Linux and Windows. It is used by people who need to download video from sites they are allowed to use, and it is the engine behind the VideoDL container web UI.
 
 It is NOT a DRM circumvention tool (it detects DRM and refuses it), NOT a site-login cracker (cookies come from the user's own session), and NOT a general media player or editor. Conversion is a thin wrapper around ffmpeg.

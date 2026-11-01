@@ -1,5 +1,8 @@
 # Agent Notes
 
+**Location (2026-11-02):** this repository lives in `scripts/videodl-script` (`/storage/Samba/Temp/git/scripts/videodl-script` on 11.1.0.2). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
+
+
 ## Documentation Discipline
 - Treat documentation as part of the change, not a follow-up. When behavior, commands, deployment flow, debugging steps, requirements, or lessons learned change, update the nearest `README.md` and this `AGENTS.md` in the same change.
 - Keep `README.md` focused on user/operator-facing setup, usage, troubleshooting, and release/deployment steps.
