@@ -698,5 +698,7 @@ default and the symlink were left for the owner.
      with 2.0.10 below it) are out of order and should be corrected by the owner
      (LESSONS #30).
 - 2026-11-08, CLI 2.0.142: first site whose every page needs a real browser engine (pornhex.com, Cloudflare managed challenge, clearance not transferable). New `src/browser-page.js` loads such pages in a local headless Chrome/Chromium/Edge; the container image ships Fedora chromium for it (LESSONS #31).
+- 2026-11-08, CLI 2.0.143: chunked downloads wait out HTTP 429 / 503 (`Retry-After`, cap 120 s) and continue with one continuous request. The pornhex media host allows 60 requests per minute and its 1080p files need about 100 chunk requests; the first check had used the 480p (LESSONS #32, BROWSER-GATED-SITES.md step 8).
+- 2026-11-08, CLI 2.0.144: on the owner's "apply it to every domain", HTTP 429/503 is waited out on every download path. Measured first: ffmpeg skips a rate-limited HLS segment and exits 0 (4.3 s of a 20 s stream), so HLS restarts through a loopback relay after the first 429 (`src/rate-limit.js`, `tests/rate-limit/run.sh`, LESSONS #33).
 - Next planned phase: none is written down. The next work is driven by site
   breakage reports. The rule for them is in AGENTS.md and LESSONS-LEARNED.md.

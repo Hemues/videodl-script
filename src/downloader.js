@@ -9,6 +9,7 @@ import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 import { detectDrm, DrmProtectedError } from './drm-detect.js';
+import { withRateLimitRetry, startHlsRelay, FFMPEG_RATE_LIMIT_RE } from './rate-limit.js';
 
 const NAME_PATTERN = /\/([^/]+?)(?:\.([a-z0-9]{1,5}))?(?:\?|#|$)/i;
 
@@ -581,7 +582,16 @@ export class VideoDownloader extends EventEmitter {
    * Non-throttled servers (XHamster, PornHub etc.) maintain steady speed
    * so they continue with the efficient direct connection.
    */
+  /**
+   * Download `url` to `filepath`. A host that answers HTTP 429/503 (rate limit)
+   * is waited out (Retry-After) and the request repeated, on every site
+   * (src/rate-limit.js, LESSONS-LEARNED #33).
+   */
   async _downloadStream(url, filepath, options = {}, onProgress = null) {
+    return withRateLimitRetry(() => this._downloadStreamOnce(url, filepath, options, onProgress));
+  }
+
+  async _downloadStreamOnce(url, filepath, options = {}, onProgress = null) {
     const PROBE_BYTES      = 1_048_576;  // Measure peak speed during first 1 MB
     const THROTTLE_RATIO   = 0.15;       // Current speed < 15% of peak → throttled
     const MIN_PEAK_SPEED   = 2_097_152;  // Only trigger if peak was > 2 MB/s
@@ -690,6 +700,7 @@ export class VideoDownloader extends EventEmitter {
           // events for the error body, but we flag it so we can reject later.
           if (resp.statusCode >= 400) {
             httpError = new Error(`HTTP ${resp.statusCode} ${resp.statusMessage || ''} — server rejected the download request`.trim());
+            httpError.response = resp;   // status + Retry-After for withRateLimitRetry
           }
         });
 
@@ -975,6 +986,7 @@ export class VideoDownloader extends EventEmitter {
           await new Promise(r => setTimeout(r, waitS * 1000 + 500));
           continue;
         }
+        if (status === 429 || status === 503) err.rateLimitExhausted = true;
         throw err;
       }
     }
@@ -985,6 +997,10 @@ export class VideoDownloader extends EventEmitter {
    * Used as fallback when Range is not supported.
    */
   async _downloadDirect(url, filepath, options = {}, onProgress = null) {
+    return withRateLimitRetry(() => this._downloadDirectOnce(url, filepath, options, onProgress));
+  }
+
+  async _downloadDirectOnce(url, filepath, options = {}, onProgress = null) {
     const dlOpts = {
       https: { rejectUnauthorized: options.rejectUnauthorized !== false },
       headers: {
@@ -1481,6 +1497,22 @@ export class VideoDownloader extends EventEmitter {
       }
     }
 
+    // Rate-limited host: ffmpeg skips a segment that answers 429 and still exits 0,
+    // so the first run is stopped at the first 429/503 and this second run sends every
+    // request through a loopback relay that waits the rate limit out
+    // (src/rate-limit.js, LESSONS-LEARNED #33).
+    let relay = null;
+    if (options._hlsRelayMode) {
+      relay = await startHlsRelay({
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', ...(options.formatHeaders || {}) },
+        cookieHeaderFor: (u) => (Array.isArray(options.cookies) ? buildCookieHeader(options.cookies, u) : ''),
+        rejectUnauthorized: options.rejectUnauthorized !== false,
+      });
+      hlsUrl = await relay.input(hlsUrl);
+      console.log('[HLS] Downloading through the rate-limit relay (waits out HTTP 429/503 per request)');
+    }
+    const viaRelay = (u) => (relay && u ? relay.local(u) : u);
+
     return new Promise((resolve, reject) => {
       const args = [
         '-loglevel', 'info',
@@ -1495,7 +1527,7 @@ export class VideoDownloader extends EventEmitter {
       const isDataInput = /^data:/i.test(hlsUrl);
 
       // Add cookies for ffmpeg (must be before -i)
-      if (!isDataInput && options.cookies && Array.isArray(options.cookies)) {
+      if (!relay && !isDataInput && options.cookies && Array.isArray(options.cookies)) {
         const ffmpegCookies = buildFfmpegCookieString(options.cookies, hlsUrl);
         if (ffmpegCookies) {
           args.push('-cookies', ffmpegCookies);
@@ -1503,7 +1535,7 @@ export class VideoDownloader extends EventEmitter {
       }
 
       // Add headers if provided (must be before -i)
-      if (!isDataInput && options.formatHeaders) {
+      if (!relay && !isDataInput && options.formatHeaders) {
         // Combine all headers into a single string for -headers option
         const headerLines = [];
         for (const [key, value] of Object.entries(options.formatHeaders)) {
@@ -1555,7 +1587,7 @@ export class VideoDownloader extends EventEmitter {
         // Multi-audio: video input + N audio inputs
         args.push('-i', hlsUrl);  // input 0: video-only variant
         for (const audio of options.hlsAudioUrls) {
-          args.push('-i', audio.url);  // inputs 1..N: audio variants
+          args.push('-i', viaRelay(audio.url));  // inputs 1..N: audio variants
         }
         args.push('-map', '0:v');
         for (let i = 0; i < options.hlsAudioUrls.length; i++) {
@@ -1575,7 +1607,7 @@ export class VideoDownloader extends EventEmitter {
       } else if (options.hlsAudioUrl) {
         args.push('-i', hlsUrl);  // input 0: video-only variant
         // Audio input needs the same headers/cookies — they were added above -i
-        args.push('-i', options.hlsAudioUrl);  // input 1: audio-only variant
+        args.push('-i', viaRelay(options.hlsAudioUrl));  // input 1: audio-only variant
         args.push('-map', '0:v', '-map', '1:a');
         args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
       } else {
@@ -1613,11 +1645,17 @@ export class VideoDownloader extends EventEmitter {
       let duration = options.duration || 0;
       let totalSize = 0;
       let stderrOutput = '';
+      let rateLimitHit = false;
 
       // Parse ffmpeg stderr for progress
       ffmpeg.stderr.on('data', (data) => {
         const output = data.toString();
         stderrOutput += output;
+        if (!relay && !rateLimitHit && FFMPEG_RATE_LIMIT_RE.test(stderrOutput.slice(-600))) {
+          rateLimitHit = true;
+          console.log('[HLS] Host rate-limits requests (HTTP 429/503) — stopping ffmpeg before it skips segments; restarting through the rate-limit relay');
+          try { ffmpeg.kill('SIGKILL'); } catch {}
+        }
         // Cap stderr buffer to avoid unbounded growth (keep last 4 KB)
         if (stderrOutput.length > 8192) {
           stderrOutput = stderrOutput.slice(-4096);
@@ -1694,11 +1732,26 @@ export class VideoDownloader extends EventEmitter {
 
       ffmpeg.on('error', (error) => {
         cleanupVariantTemp();
+        if (relay) relay.close();
         reject(new Error(`ffmpeg error: ${error.message}`));
       });
 
       ffmpeg.on('close', async (code) => {
         cleanupVariantTemp();
+        if (relay) await relay.close();
+        if (rateLimitHit) {
+          try { fs.unlinkSync(incompletePath); } catch {}
+          try { resolve(await this.downloadHLS({ ...options, _hlsRelayMode: true })); } catch (e) { reject(e); }
+          return;
+        }
+        if (relay && relay.failures.length > 0) {
+          try { fs.unlinkSync(incompletePath); } catch {}
+          reject(new Error(`HLS download incomplete: ${relay.failures.length} request(s) failed after retries (first: ${relay.failures[0]})`));
+          return;
+        }
+        if (relay && relay.stats.rateLimited) {
+          console.log(`[HLS] Rate limit waited out ${relay.stats.rateLimited} time(s) over ${relay.stats.requests} requests`);
+        }
         if (code === 0) {
           // Rename .incomplete → final path before post-processing
           try {

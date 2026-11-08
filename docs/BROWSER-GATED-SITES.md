@@ -53,7 +53,8 @@ Run every probe from the build host. Record what each step returns.
    (pornhex: 60, HTTP 429 with `Retry-After`); the downloader's chunked mode makes one request
    per 10 MB, so only a big file shows the limit. Since CLI 2.0.143 the downloader waits out a
    429/503 and continues with one continuous request (LESSONS #32); check the log for
-   `HTTP 429 (rate limit)` lines and read the host's `x-ratelimit-*` headers once.
+   `HTTP 429 (rate limit)` lines and read the host's `x-ratelimit-*` headers once. Since 2.0.144 the
+   same waiting applies to every site and to HLS (LESSONS #33); `tests/rate-limit/run.sh` proves it.
 
 ## 3. Why each simpler route fails (measured on pornhex.com, 2026-11-08)
 

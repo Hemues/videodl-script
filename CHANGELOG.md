@@ -2,6 +2,29 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.144] - 2026-11-08
+
+### Fixed (CLI 2.0.144, 2026-11-08)
+- **HTTP 429 / 503 is waited out on every site and every download path**, not only in the chunked
+  path of 2.0.143. New module `src/rate-limit.js` (`withRateLimitRetry`, `retryAfterSeconds`,
+  `startHlsRelay`):
+  - Node downloads (`_downloadStream`, `_downloadDirect`: direct files, video + audio pairs): a
+    429/503 on the first request is waited out (`Retry-After`, capped at 120 s, backoff 5·2^n s
+    when absent) and the request repeated, up to 6 times. An inner loop that already gave up
+    (`_rangeToFile`) marks its error so it is not retried twice.
+  - **HLS downloads (ffmpeg):** ffmpeg skips a segment that answers 429 and still exits 0 - a
+    silently truncated video (measured with ffmpeg 8.1: 4.3 s of a 20 s stream, exit 0; neither
+    `-seg_max_retry` nor `-reconnect_on_http_error` helps, the first retries at once and the second
+    does not reach segment requests). videodl now stops ffmpeg at the first 429/503 in its output
+    and restarts the download through a loopback relay (127.0.0.1, random path token, only the
+    URLs of this download): the relay fetches every playlist, key and segment itself with the
+    download's headers and cookies, waits out each 429/503 and hands ffmpeg only complete answers.
+    A request the relay finally gives up on fails the download ("HLS download incomplete")
+    instead of producing a shorter file. Hosts that never rate-limit keep the old path unchanged.
+- New acceptance test `tests/rate-limit/run.sh` (loopback server that answers 429 + Retry-After;
+  six cases: HLS limit on the playlist, on a segment, long waits, direct MP4, control, a lost
+  segment). `LESSONS-LEARNED.md #33`.
+
 ## [2.0.143] - 2026-11-08
 
 ### Fixed (CLI 2.0.143, 2026-11-08)

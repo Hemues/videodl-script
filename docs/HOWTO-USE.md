@@ -477,6 +477,10 @@ The message is the one quoted in the CHANGELOG 2.0.10 entry (the text is not fou
 
 Two causes, both fixed in 2.0.139. Update to 2.0.139. If it still happens, load the page again (a new page load can draw the other CDN) and check that the cookie file is passed with `--cookies` (LESSONS #19).
 
+### `HTTP 429 (rate limit)` or `[HLS relay]` lines during a download
+
+The media host limits requests per minute. videodl waits the time the host asks for (`Retry-After`, at most 120 s per wait) and continues; an HLS download is switched to a local relay that does the same for every segment. Nothing to do. If the download still fails (`HLS download incomplete`, or a 429 after six waits), start it again later (LESSONS #32, #33).
+
 ### `HTTP 429 Too Many Requests` on subtitles
 
 Pass a cookies file with `--cookies`. Reduce `--sub-lang` to the languages you need. The tool already paces requests and backs off.

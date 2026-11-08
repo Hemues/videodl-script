@@ -79,3 +79,4 @@ LOCAL-*.md
 initials-debug.json
 gen-cookies-out.txt
 video-urls.txt
+__pycache__/

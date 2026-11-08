@@ -41,6 +41,7 @@ Entries marked [OK] are verified in production. Entries marked [OPEN] are pendin
 30. Documentation drift: stale tags, file names, counts and CHANGELOG dates (added 2026-10-31)
 31. Pornhex: a Cloudflare challenge only a browser passes; the clearance cookie does not transfer (added 2026-11-08)
 32. Chunked mode met a per-minute request limit (HTTP 429) on a 1 GB file (added 2026-11-08)
+33. ffmpeg skips rate-limited HLS segments and exits 0; HTTP 429 handled on every path (added 2026-11-08)
 
 ---
 
@@ -847,3 +848,37 @@ request; a slower single connection beats a stream of requests that the host ref
 **Key lesson.** A download test must cover the largest format, not the smallest: request-count limits
 scale with file size. When a host answers 429, read its `x-ratelimit-*` and `retry-after` headers before
 designing the retry; they state the limit exactly.
+
+## #33 — ffmpeg skips rate-limited HLS segments and exits 0
+
+[OK] Verified 2026-11-08 (CLI 2.0.144; `tests/rate-limit/run.sh` 6 of 6, source smoke GREEN).
+
+**Question.** After #32 the owner asked to apply the rate-limit handling to every domain. #32 had
+fixed only the chunked path that pornhex used.
+
+**Measured.** A loopback test server answering 429 + `Retry-After` (sliding window, 3 requests per
+4 s) against ffmpeg 8.1 with a 20 s HLS stream: ffmpeg logged "Failed to open segment N", skipped the
+segment, and exited 0 with **4.3 s** of video. `-seg_max_retry 10` retried at once (198 more 429s,
+same 4.3 s); `-reconnect 1 -reconnect_on_http_error 429,5xx` did not apply to segment requests at
+all (the HLS demuxer passes only headers / cookies / user agent / proxy / timeout to nested opens).
+So a rate-limited HLS host produced a short file that looked like a success, on any site. The Node
+paths were safer but still failed the whole download on a 429 at the first request.
+
+**Fix (`src/rate-limit.js`).**
+- Node paths: `withRateLimitRetry()` repeats the whole request after the host's `Retry-After`.
+- HLS: the ffmpeg run is watched for `HTTP error 429|503` / `Server returned 429|503`; the first hit
+  kills ffmpeg (before it skips anything) and the download restarts through `startHlsRelay()`, a
+  loopback HTTP server. ffmpeg reads `http://127.0.0.1:<port>/<token>/<n>.<ext>`; the relay maps
+  `<n>` to the real URL, applies the SSRF guard, adds the headers and cookies, forwards `Range`,
+  rewrites playlists it serves (master -> variants -> segments, `URI=` keys and init maps) to relay
+  URLs, and waits out every 429/503 (10 waits per request, network errors 3 retries). It never
+  answers ffmpeg with a 429, so ffmpeg never skips. Any request it gives up on is recorded and the
+  download fails with "HLS download incomplete" instead of saving a shorter file.
+
+**Why not always the relay.** The normal path is what every other site has been verified with
+(smoke cases, months of use); the relay is used only after a host has shown it rate-limits.
+
+**Key lesson.** ffmpeg's exit code does not prove an HLS download is complete: a segment that fails
+to open is skipped. Treat a 429/503 line in ffmpeg's output as an error, and test a downloader against
+a server that rate-limits on purpose (`tests/rate-limit/run.sh`), not only against sites that happen
+to be fast today.

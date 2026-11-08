@@ -187,6 +187,7 @@ python3 tests/smoke.py --source --filter pornhub
 python3 tests/smoke.py --binary dist/videodl-ffmpeg-linux
 python3 tests/smoke.py --image ghcr.io/hemues/videodl:candidate     # podman run (container release gate)
 python3 tests/smoke.py --deployed videodl                           # podman exec into the live container
+bash tests/rate-limit/run.sh                                        # HTTP 429 handling, loopback only, ~3 min
 ```
 
 ### Build
@@ -257,6 +258,9 @@ Cause: `-o` contained `..` or resolved outside `-d`. Fix: plain file name in `-o
 
 ### `Found 0 formats` on PornHub, or `HTTP 410 Gone` for every quality
 Cause: the CDN choice per page load and the missing session cookies (LESSONS #19). Fix: update to 2.0.139, load the page again, pass `--cookies`.
+
+### `HTTP 429 (rate limit) … waiting Ns` or `[HLS relay]` lines during a download
+Not an error: the host limits requests per minute and videodl waits as long as the host asks, then continues (LESSONS #32, #33). A download that still fails says `HLS download incomplete` or reports the 429 after 6 waits; try again later.
 
 ### `HTTP 429 Too Many Requests` on subtitles
 Cause: the YouTube auto-translate endpoint throttles anonymous requests (LESSONS #29). Fix: `--cookies`, fewer languages.

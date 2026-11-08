@@ -40,7 +40,8 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - `git -c core.fileMode=false status --short` on the build host → `?? tests/__pycache__/` and nothing else on 2026-10-31. The tracked symlink `.compile.unix.sh` is in HEAD (LESSONS #23).
 - `git log --date=short --reverse --format='%ad %h %s'` → 91 commits, 2026-02-25 to 2026-10-31 (verified 2026-10-31; 90 commits up to `7ff739d` before the audit commit).
 - `git tag --sort=creatordate --format='%(creatordate:short) %(refname:short)' | tail -4` → `v2.0.134`, `v2.0.136`, `v2.0.137`, `v2.0.139` (verified 2026-10-31).
-- `python3 tests/smoke.py --source` → runs the cases through `node src/cli.js`; needs network (not verified in the 2026-10-31 pass).
+- `python3 tests/smoke.py --source` → runs the cases through `node src/cli.js`; needs network (GREEN 2026-11-08: 9 passed, vimeo optional 401).
+- `bash tests/rate-limit/run.sh` → six rate-limit cases against a loopback server, no network (GREEN 6/6 on 2026-11-08); `VIDEODL_CMD=dist/videodl-ffmpeg-linux` runs it on a binary.
 - `bash compile.sh --bundle-only` → CJS bundle only (not verified in the 2026-10-31 pass).
 - `bash update-from-upstream.sh status` → on the build host only, needs the private env file (not verified in the 2026-10-31 pass).
 
@@ -111,6 +112,12 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   per-minute limit (pornhex media: 60/min) answer 429. Every chunk request goes through
   `_rangeToFile()` (waits `Retry-After`, truncates, retries; after a 429 the rest is one request).
   Test the largest format of a new site, not the smallest. `LESSONS-LEARNED.md #32`.
+- **HTTP 429 / 503 on every path (2.0.144):** `src/rate-limit.js`. Node downloads repeat the
+  request after `Retry-After`; HLS is the trap: ffmpeg SKIPS a segment that answers 429 and
+  exits 0 (a short file that looks fine). The ffmpeg run is stopped at the first 429/503 line and
+  restarted through `startHlsRelay()` (loopback relay that waits out each refusal and fails the
+  job on a lost segment). Never trust ffmpeg's exit code as proof of a complete HLS download.
+  Gate: `bash tests/rate-limit/run.sh` (no network, ~3 min). `LESSONS-LEARNED.md #33`.
 - **HentaiHaven** must be fetched with `curl`, not Node or cycletls (Cloudflare managed
   challenge, `LESSONS-LEARNED.md #15`).
 - **Obfuscated HLS segment names** (`.html`, `.txt`) need `-allowed_extensions ALL`; and
