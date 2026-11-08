@@ -38,7 +38,18 @@
       "extractor": "Vimeo",
       "minFormats": 1,
       "optional": true,
-      "note": "Vimeo changes often; reported but does not gate"
+      "timeout": 180,
+      "note": "Vimeo changes often; reported but does not gate. Since 2026-11 the player page is behind Cloudflare Turnstile, so this case also exercises the browser loader (LESSONS #35)."
+    },
+    {
+      "name": "hls-non-aac-audio",
+      "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
+      "extractor": "*",
+      "minFormats": 3,
+      "probe": true,
+      "minProbeBytes": 25000000,
+      "timeout": 300,
+      "note": "Apple's public fMP4 example; `-f worst` is AC-3 audio (600 s, 28.8 MB). Until 2.0.146 a forced -bsf:a aac_adtstoasc failed every non-AAC HLS download (LESSONS #36)."
     },
     {
       "name": "pornhex-browser",

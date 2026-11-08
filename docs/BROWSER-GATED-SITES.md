@@ -1,6 +1,9 @@
 # Browser-gated sites: the known mechanism
 
 Written 2026-11-08 with CLI 2.0.142 (first site: pornhex.com, `LESSONS-LEARNED.md #31`).
+Second site the same day, CLI 2.0.146: the Vimeo player page (Cloudflare **Turnstile**, HTTP 401;
+`LESSONS-LEARNED.md #35`). Pattern there: plain request first, browser only when it gives no config,
+and a `waitFor` that also matches the refusal text so a failed check ends at once.
 Read this before adding any site whose pages answer with a Cloudflare (or similar) challenge.
 
 ## 1. The pattern in one paragraph

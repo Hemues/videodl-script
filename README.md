@@ -1,6 +1,6 @@
 # videodl-cli
 
-**Location (2026-11-02):** this repository lives in `scripts/videodl-script` (`/storage/Samba/Temp/git/scripts/videodl-script` on 11.1.0.2). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
+**Location (2026-11-02):** this repository lives in `scripts/videodl-script` of the owner's workspace (the build host and its paths are recorded in the private image repository, not here). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
 
 
 A command line video downloader and converter with 48 native site extractors, DASH and HLS support, cookie-based authentication, subtitle embedding, chapter embedding, a yt-dlp fallback for more than 1000 sites, and standalone binary builds for Linux and Windows. It is used by people who need to download video from sites they are allowed to use, and it is the engine behind the VideoDL container web UI.
@@ -71,7 +71,7 @@ The table is the README copy of the support list. The 48 native extractors are l
 | RedTube | redtube.com | Full support |
 | Tube8 | tube8.com | Full support |
 | Facebook | facebook.com, fb.watch | Full support |
-| Vimeo | vimeo.com | Full support |
+| Vimeo | vimeo.com | Full support. Since 2.0.146 the player page is loaded in a local headless browser when a plain request is refused (Cloudflare Turnstile); the video files download normally |
 | Dailymotion | dailymotion.com, dai.ly | TLS fingerprint bypass (cycletls) |
 | Twitch | twitch.tv, clips.twitch.tv | Clips and VODs |
 | Reddit | reddit.com, v.redd.it | HLS adaptive streaming |

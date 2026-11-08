@@ -18,7 +18,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **RedTube** — full support
 - ✅ **Tube8** — full support
 - ✅ **Facebook** — facebook.com, fb.watch
-- ✅ **Vimeo** — full support
+- ✅ **Vimeo** — full support; the player page sits behind Cloudflare Turnstile since 2026-11, so it is loaded in the headless browser when a plain request is refused (2.0.146, LESSONS #35)
 - ✅ **Dailymotion** — dailymotion.com, dai.ly (CycleTLS)
 - ✅ **Twitch** — twitch.tv clips & VODs (GQL API)
 - ✅ **Reddit** — reddit.com, v.redd.it

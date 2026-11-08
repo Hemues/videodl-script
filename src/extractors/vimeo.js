@@ -22,6 +22,7 @@
  */
 
 import { BaseExtractor } from './base.js';
+import { fetchRenderedPage } from '../browser-page.js';
 import got from 'got';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -197,23 +198,39 @@ export class VimeoExtractor extends BaseExtractor {
     const playerUrl = `https://player.vimeo.com/video/${videoId}`;
     console.log(`[${this.name}] Fetching player page: ${playerUrl}`);
 
-    const playerResp = await got(playerUrl, {
-      headers,
-      followRedirect: true,
-      maxRedirects: 5,
-      timeout: { request: 30000 },
-    });
-
-    // Step 2: Parse playerConfig
-    let config;
+    // Step 2: playerConfig. Since 2026-11 the player page answers a plain request with
+    // a Cloudflare Turnstile page ("We couldn't verify the security of your connection",
+    // HTTP 401) - yt-dlp's web client needs a login and its android client cached tokens.
+    // A real browser passes it, so the page is loaded through src/browser-page.js when
+    // the plain request does not give a config (docs/BROWSER-GATED-SITES.md,
+    // LESSONS-LEARNED #35). The media URLs in the config download with plain HTTP.
+    let config = null;
     try {
+      const playerResp = await got(playerUrl, {
+        headers,
+        followRedirect: true,
+        maxRedirects: 5,
+        timeout: { request: 30000 },
+      });
       config = this._parsePlayerConfig(playerResp.body);
     } catch (e) {
-      throw new Error(`Failed to parse Vimeo player config: ${e.message}`);
+      console.log(`[${this.name}] Plain player request refused (${e.response?.statusCode ? 'HTTP ' + e.response.statusCode : e.message}) - loading the player in a browser`);
     }
 
     if (!config) {
-      throw new Error('Could not find playerConfig in Vimeo player page');
+      const page = await fetchRenderedPage(playerUrl, {
+        waitFor: "!!window.playerConfig || !!(document.body && /couldn.t verify the security/i.test(document.body.innerText || ''))",
+        evaluate: 'window.playerConfig || null',
+        timeout: 90_000,
+        log: (msg) => console.log(`[${this.name}] ${msg}`),
+      });
+      config = page.value;
+      if (!config) {
+        try { config = this._parsePlayerConfig(page.html); } catch { config = null; }
+      }
+      if (!config) {
+        throw new Error('Vimeo player page did not give a playerConfig, even in a browser (bot check not passed, or the video is private / login-only)');
+      }
     }
 
     // Step 3: Extract video metadata

@@ -2,6 +2,31 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.146] - 2026-11-08
+
+### Fixed (CLI 2.0.146, 2026-11-08)
+- **Vimeo works again.** The player page (`player.vimeo.com/video/<id>`) now answers a plain request
+  with a Cloudflare Turnstile page ("We couldn't verify the security of your connection", HTTP 401;
+  `/config` 403). yt-dlp 2026.08.19 fails too: its `web` client needs a login, its `android` client
+  only cached OAuth tokens. The extractor now falls back to the headless browser loader
+  (`src/browser-page.js`, the pornhex mechanism) when the plain request gives no `playerConfig`, and
+  reads `window.playerConfig` from the rendered page (2.5 s). The media URLs in it (progressive MP4,
+  HLS, DASH) download with plain HTTP. Verified: `https://vimeo.com/1084537` extracts 6 formats and
+  downloads in full (597 s). `LESSONS-LEARNED.md #35`.
+- **HLS downloads with non-AAC audio no longer fail.** Every HLS ffmpeg command carried
+  `-bsf:a aac_adtstoasc`, which ffmpeg refuses on AC-3, E-AC-3, MP3 or Opus audio ("Error initializing
+  bitstream filter"), so such a download failed at the start. The flag is gone: the MP4 and Matroska
+  muxers add the filter themselves when the audio is ADTS AAC (ffmpeg `movenc.c` /
+  `matroskaenc.c` `check_bitstream`). Verified: Apple's fMP4 example (AC-3) downloads; an ADTS-AAC
+  stream gives a byte-identical file to before (20,049,921 bytes). `LESSONS-LEARNED.md #36`.
+- README / AGENTS no longer name the build host address and share path (line 3, added 2026-11-02;
+  LESSONS #22 rule).
+
+### Tests
+- New smoke case `hls-non-aac-audio` (Apple's AC-3 fMP4 example, probe download); `vimeo-extract`
+  gets a 180 s timeout. `tests/smoke.py --source`: **11 passed, 0 failed** - the first run without an
+  optional failure since the Vimeo case was added.
+
 ## [2.0.145] - 2026-11-08
 
 ### Fixed (CLI 2.0.145, 2026-11-08)

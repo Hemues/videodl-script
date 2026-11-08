@@ -43,6 +43,8 @@ Entries marked [OK] are verified in production. Entries marked [OPEN] are pendin
 32. Chunked mode met a per-minute request limit (HTTP 429) on a 1 GB file (added 2026-11-08)
 33. ffmpeg skips rate-limited HLS segments and exits 0; HTTP 429 handled on every path (added 2026-11-08)
 34. A transfer cut mid-segment loses video silently; the retry relay became the default (added 2026-11-08)
+35. Vimeo's player went behind Cloudflare Turnstile; browser fallback (added 2026-11-08)
+36. A forced `-bsf:a aac_adtstoasc` failed every non-AAC HLS download (added 2026-11-08)
 
 ---
 
@@ -684,6 +686,7 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 - **Rule:** never write host names, addresses, share paths, user names, uids or updater paths into this repository. They belong in the private environment file or in the private container repository. Run a `git grep` for them before every push. The notes about the second local clone (README "Known gaps") name no paths for the same reason.
 - **Two clones (documented 2026-10-31):** two local clones of this repository exist on the owner's build network share. One is the working clone; the other is a mirror. After every push the mirror is fast-forwarded to the pushed HEAD, and the mirror is never edited. No paths are written here or in the README, because the repository is public.
 - **Detection gap:** nothing automatic. The old text is still in the history of commits before `f9d8706`. A history rewrite is an owner option and was not done.
+- **Recurrence (2026-11-02 to 2026-11-08):** the location note on line 3 of README.md and AGENTS.md named the build host address and the share path again; removed in 2.0.146. Before every push, `git grep` the tracked files for the build host's address and its share-path prefix (kept out of this file on purpose).
 
 ## #23 — Accidental symlink `.compile.unix.sh` committed by a sync commit
 
@@ -919,3 +922,41 @@ its duration: a gap keeps the timestamps. (2) Read the tool's source before trus
 options. (3) A relay in front of a tool must keep connections alive or it costs a handshake per
 request. (4) Not fixed here, found by the same check: `-bsf:a aac_adtstoasc` is applied to every HLS
 audio stream and fails when the chosen audio is not AAC (Apple's fMP4 example, both modes).
+
+## #35 — Vimeo's player went behind Cloudflare Turnstile
+
+[OK] Verified 2026-11-08 (CLI 2.0.146; smoke `vimeo-extract` PASS, full download 597 s).
+
+**Symptom.** The smoke case `vimeo-extract` had failed for weeks as "optional": "Request failed with
+status code 401 (Unauthorized): GET https://player.vimeo.com/video/1084537".
+
+**Cause.** Read, not guessed: the 401 body is a Cloudflare Turnstile page ("We couldn't verify the
+security of your connection", `challenges.cloudflare.com/turnstile`); `/config` answers 403; a Referer
+changes nothing. yt-dlp 2026.08.19 cannot help: `web` client "only works when logged-in", `android`
+"only intended for use with previously cached tokens", no other client exists.
+
+**Fix.** The browser-gated mechanism (`docs/BROWSER-GATED-SITES.md`) applied as written: plain request
+first, and when it gives no `playerConfig`, `fetchRenderedPage()` with `waitFor` on
+`window.playerConfig` OR the refusal text (so a failed check ends at once instead of waiting 90 s).
+The page passes in about 2.5 s; the media URLs are not gated (progressive 206, HLS 200 over plain HTTP).
+
+**Key lesson.** An "optional" smoke failure that persists is a broken extractor, not noise: read its
+answer body. The mechanism written for one site this morning fixed a second one in an hour.
+
+## #36 — A forced `-bsf:a aac_adtstoasc` failed every non-AAC HLS download
+
+[OK] Verified 2026-11-08 (CLI 2.0.146; smoke `hls-non-aac-audio` PASS).
+
+**Symptom.** Found by the frame-count checks of #34: Apple's public fMP4 example failed in both relay
+and plain mode with "Error initializing bitstream filter: aac_adtstoasc" - its lowest quality has AC-3
+audio.
+
+**Cause.** All three HLS ffmpeg command branches ended with `-c copy -bsf:a aac_adtstoasc`. The filter
+accepts only AAC; on any other audio codec ffmpeg refuses to open the output.
+
+**Fix.** The flag is removed. ffmpeg's MP4 muxer (`movenc.c` `mov_check_bitstream`) and Matroska muxer
+(`matroskaenc.c` `mkv_check_bitstream`) insert `aac_adtstoasc` themselves when an AAC packet starts with
+an ADTS header. An ADTS-AAC HLS stream gives a byte-identical file to before.
+
+**Key lesson.** A flag copied from old ffmpeg advice ("add -bsf:a aac_adtstoasc for HLS to MP4") can
+outlive its reason and break the cases nobody tested. Read the muxer before adding a filter by hand.

@@ -1595,7 +1595,7 @@ export class VideoDownloader extends EventEmitter {
         for (let i = 0; i < options.hlsAudioUrls.length; i++) {
           args.push('-map', `${i + 1}:a`);
         }
-        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+        args.push('-c', 'copy');
         // Set language metadata for each audio stream
         for (let i = 0; i < options.hlsAudioUrls.length; i++) {
           const audio = options.hlsAudioUrls[i];
@@ -1611,11 +1611,14 @@ export class VideoDownloader extends EventEmitter {
         // Audio input needs the same headers/cookies — they were added above -i
         args.push('-i', viaRelay(options.hlsAudioUrl));  // input 1: audio-only variant
         args.push('-map', '0:v', '-map', '1:a');
-        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+        args.push('-c', 'copy');
       } else {
         args.push('-i', hlsUrl);
-        args.push('-c', 'copy', '-bsf:a', 'aac_adtstoasc');
+        args.push('-c', 'copy');
       }
+      // No `-bsf:a aac_adtstoasc`: the MP4 and Matroska muxers add it themselves when the
+      // audio is ADTS AAC (movenc.c / matroskaenc.c check_bitstream). Forced on any other
+      // codec (AC-3, E-AC-3, MP3, Opus) it failed the whole download (LESSONS-LEARNED #36).
       // Explicitly set output format so ffmpeg doesn't rely on the
       // .incomplete extension to guess the container.
       const hlsOutExt = path.extname(incompletePath.replace(/\.incomplete$/, '')).replace('.', '');

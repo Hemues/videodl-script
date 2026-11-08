@@ -1,6 +1,6 @@
 # Agent Notes
 
-**Location (2026-11-02):** this repository lives in `scripts/videodl-script` (`/storage/Samba/Temp/git/scripts/videodl-script` on 11.1.0.2). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
+**Location (2026-11-02):** this repository lives in `scripts/videodl-script` of the owner's workspace (the build host and its paths are recorded in the private image repository, not here). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
 
 
 ## Documentation Discipline
@@ -40,7 +40,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - `git -c core.fileMode=false status --short` on the build host → `?? tests/__pycache__/` and nothing else on 2026-10-31. The tracked symlink `.compile.unix.sh` is in HEAD (LESSONS #23).
 - `git log --date=short --reverse --format='%ad %h %s'` → 91 commits, 2026-02-25 to 2026-10-31 (verified 2026-10-31; 90 commits up to `7ff739d` before the audit commit).
 - `git tag --sort=creatordate --format='%(creatordate:short) %(refname:short)' | tail -4` → `v2.0.134`, `v2.0.136`, `v2.0.137`, `v2.0.139` (verified 2026-10-31).
-- `python3 tests/smoke.py --source` → runs the cases through `node src/cli.js`; needs network (GREEN 2026-11-08: 9 passed, vimeo optional 401).
+- `python3 tests/smoke.py --source` → runs the cases through `node src/cli.js`; needs network (GREEN 2026-11-08 with 2.0.146: 11 passed, 0 failed, nothing optional failing).
 - `bash tests/rate-limit/run.sh` → six rate-limit cases against a loopback server, no network (GREEN 6/6 on 2026-11-08); `VIDEODL_CMD=dist/videodl-ffmpeg-linux` runs it on a binary.
 - `bash compile.sh --bundle-only` → CJS bundle only (not verified in the 2026-10-31 pass).
 - `bash update-from-upstream.sh status` → on the build host only, needs the private env file (not verified in the 2026-10-31 pass).
@@ -103,6 +103,12 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   reading fields (`LESSONS-LEARNED.md #28`).
 - **YouTube auto-translate** (`&tlang=`) answers 429 to anonymous requests. Keep the pacing
   and the cookie forwarding (`LESSONS-LEARNED.md #29`).
+- **Vimeo (2.0.146):** the player page is behind Cloudflare Turnstile; `vimeo.js` tries a plain
+  request and falls back to `fetchRenderedPage()` (`window.playerConfig`). Media URLs are not gated.
+  yt-dlp is no fallback here (login or cached tokens only). `LESSONS-LEARNED.md #35`.
+- **Never force `-bsf:a aac_adtstoasc`** (removed in 2.0.146): the MP4 / Matroska muxers add it
+  for ADTS AAC themselves, and forced on AC-3 / E-AC-3 / MP3 / Opus it fails the download.
+  Smoke case `hls-non-aac-audio` guards it. `LESSONS-LEARNED.md #36`.
 - **Pornhex (2.0.142):** every page is a Cloudflare managed challenge that only a real browser passes;
   the clearance cookie does not transfer to curl or cycletls. The page goes through
   `src/browser-page.js` (local headless Chrome/Chromium/Edge, `VIDEODL_BROWSER`), the MP4s download
