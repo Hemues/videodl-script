@@ -51,6 +51,7 @@ import { VtbeExtractor } from './vtbe.js';
 import { JustSwallowsExtractor } from './justswallows.js';
 import { SkoolExtractor } from './skool.js';
 import { StreamImdbExtractor } from './streamimdb.js';
+import { PornhexExtractor } from './pornhex.js';
 import { YtdlpExtractor } from './ytdlp.js';
 
 // Registry of all extractors
@@ -102,6 +103,7 @@ const EXTRACTORS = [
   VtbeExtractor,
   SkoolExtractor,
   StreamImdbExtractor,
+  PornhexExtractor,
   YtdlpExtractor,  // yt-dlp fallback for 1000+ additional sites
   DirectExtractor  // Always try direct URL last
 ];
@@ -200,6 +202,7 @@ export function listExtractors() {
     'JustSwallows':      'justswallows.live (WordPress/RetroTube → vtbe.to embed)',
     'Vtbe':              'vtbe.to (JWPlayer HLS host; embedded by many tube sites)',
     'Skool':             'skool.com classroom lessons (often YouTube attachments)',
+    'Pornhex':           'pornhex.com (Cloudflare challenge passed in a local Chromium; progressive MP4)',
     'yt-dlp':            'yt-dlp fallback (1000+ sites — requires yt-dlp installed)',
     'Direct':            'Direct video URLs (.mp4, .mkv, .webm, .m3u8, ...)',
   };

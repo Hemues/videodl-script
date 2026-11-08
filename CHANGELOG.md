@@ -2,6 +2,21 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.142] - 2026-11-08
+
+### Added (CLI 2.0.142, 2026-11-08)
+- **Pornhex extractor** (`src/extractors/pornhex.js`): pornhex.com and its language
+  subdomains (`hu.pornhex.com/video/<slug>`). Progressive MP4 in 480p, 720p and 1080p
+  from the player's `videoSources` list (`src + ?h=<token>`), title from `og:title`,
+  duration from `data-dur`. Verified 2026-11-08: a 31-minute video downloaded in full
+  (480p, H.264/AAC, duration equal to the page's).
+- **Browser page loader** (`src/browser-page.js`): loads a page in a locally installed
+  Chrome, Chromium or Edge (headless, throw-away profile, DevTools protocol over Node's
+  built-in WebSocket, no new dependency) for sites whose every page sits behind a
+  Cloudflare managed challenge. New environment variables `VIDEODL_BROWSER` (browser
+  executable) and `VIDEODL_BROWSER_NO_SANDBOX=1`. The container image installs
+  Fedora's `chromium` for it. `LESSONS-LEARNED.md #31`.
+
 ## [2.0.139] - 2026-10-03
 
 (`package.json` 2.0.139; this block was headed `[Unreleased]` until the 2026-10-13 docs audit. No `v2.0.139` git tag exists.)

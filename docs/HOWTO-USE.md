@@ -147,6 +147,8 @@ There is no configuration file. Every setting is a command line option or an env
 | --- | --- | --- | --- | --- |
 | `VIDEODL_ALLOW_PRIVATE_URLS` | unset (private addresses refused) | `src/cli.js`, `src/url-guard.js` | `1` allows loopback, LAN and link-local URLs | you download from a NAS or a LAN server. Same as `--allow-private-urls` |
 | `VIDEODL_SOLVER_UNSANDBOXED` | unset (solver sandboxed) | `src/solver-sandbox.js` | `1` runs the YouTube challenge solver without the permission sandbox; prints a loud warning | debugging the solver only. Never set it on a shared host |
+| `VIDEODL_BROWSER` | unset (searched: Chrome, Edge, Chromium, Brave in the usual install paths) | `src/browser-page.js` | path to a Chromium-family browser executable | a site needs a browser to pass its bot check (pornhex.com) and the browser is not in a standard location |
+| `VIDEODL_BROWSER_NO_SANDBOX` | unset (`--no-sandbox` only as root or in a container) | `src/browser-page.js` | `1` starts the browser with `--no-sandbox` | the browser refuses to start because its sandbox is unavailable |
 | `VIDEODL_CAPTCHA_PROVIDER` | `wit` | `src/captcha-solver.js`, `src/cookie-generator.js` | `wit` (free) or `2captcha` (paid) | you use the paid solver |
 | `VIDEODL_CAPTCHA_API_KEY` | unset | `src/captcha-solver.js`, `src/cookie-generator.js` | API key for the chosen solver. Secret | you need CAPTCHA solving. Keep it out of git and out of shell history |
 | `CAPTCHA_PROVIDER` | unset | `src/captcha-solver.js`, `src/cookie-generator.js`, `src/cli.js` | short form read as a fallback | the same as above (the `VIDEODL_` names are preferred) |

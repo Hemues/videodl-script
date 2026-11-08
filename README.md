@@ -3,7 +3,7 @@
 **Location (2026-11-02):** this repository lives in `scripts/videodl-script` (`/storage/Samba/Temp/git/scripts/videodl-script` on 11.1.0.2). The second clone in `containers/videodl-script` was folded into it; `update-from-upstream.sh` finds the image repo at `../../containers/videodl-container`.
 
 
-A command line video downloader and converter with 47 native site extractors, DASH and HLS support, cookie-based authentication, subtitle embedding, chapter embedding, a yt-dlp fallback for more than 1000 sites, and standalone binary builds for Linux and Windows. It is used by people who need to download video from sites they are allowed to use, and it is the engine behind the VideoDL container web UI.
+A command line video downloader and converter with 48 native site extractors, DASH and HLS support, cookie-based authentication, subtitle embedding, chapter embedding, a yt-dlp fallback for more than 1000 sites, and standalone binary builds for Linux and Windows. It is used by people who need to download video from sites they are allowed to use, and it is the engine behind the VideoDL container web UI.
 
 It is NOT a DRM circumvention tool (it detects DRM and refuses it), NOT a site-login cracker (cookies come from the user's own session), and NOT a general media player or editor. Conversion is a thin wrapper around ffmpeg.
 
@@ -27,7 +27,7 @@ videodl-cli is a Node.js ES module with a `commander` command line front end (`s
 
 Main features, each with the file that owns it:
 
-- **47 native site extractors** (`src/extractors/*.js`, registry in `src/extractors/index.js`). The registry has 49 entries in total: the 47 site extractors, the yt-dlp fallback (`ytdlp.js`) and the direct-URL extractor (`direct.js`). The complete site list is in the table below.
+- **48 native site extractors** (`src/extractors/*.js`, registry in `src/extractors/index.js`). The registry has 50 entries in total: the 48 site extractors, the yt-dlp fallback (`ytdlp.js`) and the direct-URL extractor (`direct.js`). The complete site list is in the table below.
 - **Quality selection** (`-f best|worst|720p|1080p`, default `best`). A warning is printed when the requested height is not available.
 - **Playlists and channels.** YouTube playlist and channel URLs are detected; each entry is downloaded into a sub-folder named after the playlist.
 - **YouTube Premium formats.** With a Premium cookie file the Premium formats are preferred and the resolution is upgraded (README section "YouTube Premium Enhanced Bitrate" in the HOWTO, section 5.5).
@@ -58,7 +58,7 @@ The tool fetches whatever URL it is given and runs code that the sites send. The
 
 ## Supported sites
 
-The table is the README copy of the support list. The 47 native extractors are listed; "yt-dlp fallback" and "direct URLs" are not native.
+The table is the README copy of the support list. The 48 native extractors are listed; "yt-dlp fallback" and "direct URLs" are not native.
 
 | Site | URL | Notes |
 |------|-----|-------|
@@ -102,6 +102,7 @@ The table is the README copy of the support list. The 47 native extractors are l
 | Brazzers | brazzers.com | Requires cookies |
 | KVS engine | blowjobs.pro, tgtsporn.com, hentaigem.com (the list `KVS_DOMAINS` in `src/extractors/kvs.js`) | Generic KVS engine (flashvars and license-code unscrambling) |
 | Skool | skool.com | Classroom lessons (YouTube or Mux video) and community posts; needs a logged-in cookie for the real title |
+| Pornhex | pornhex.com (any language subdomain, e.g. hu.pornhex.com) | Progressive MP4 480p-1080p. Every page sits behind a Cloudflare challenge, so the page is loaded in a local headless Chrome, Chromium or Edge (`VIDEODL_BROWSER` to choose one); the video files download normally |
 | StreamIMDb | streamimdb.ru, vidapi.ru, vaplayer.ru (`/embed/` pages) | HLS variants; OpenSubtitles lookup by IMDb id |
 | JustSwallows | justswallows.live | Embeds vtbe.to; the Vtbe host extractor does the work |
 | Vtbe | vtbe.to | Host extractor, reusable by other tube sites |
@@ -141,7 +142,7 @@ git -C <checkout> log --oneline -1
      download | dl-convert | convert | extract | download-json | generate-cookies | ...
           |                   |                         |
   src/extractors/index.js     |                 src/converter.js (ffmpeg wrapper)
-  (47 native + ytdlp + direct) |
+  (48 native + ytdlp + direct) |
           |                   |
   extractVideoInfo() -> formats, subtitles, chapters, headers, cookies, DRM flag
           |

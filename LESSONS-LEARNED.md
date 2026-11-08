@@ -39,6 +39,7 @@ Entries marked [OK] are verified in production. Entries marked [OPEN] are pendin
 28. Playlist result crashed the default download path (added 2026-10-31)
 29. YouTube auto-translate answers 429 to anonymous requests (added 2026-10-31)
 30. Documentation drift: stale tags, file names, counts and CHANGELOG dates (added 2026-10-31)
+31. Pornhex: a Cloudflare challenge only a browser passes; the clearance cookie does not transfer (added 2026-11-08)
 
 ---
 
@@ -770,3 +771,48 @@ Numbering continues in ascending order, as in the rest of this file, so that exi
 ---
 
 **Last update:** 2026-10-31
+
+---
+
+## #31 — Pornhex — a challenge only a browser passes
+
+[OK] Verified 2026-11-08 (CLI 2.0.142; a 31-minute video downloaded in full).
+
+**Symptom.** Every pornhex.com URL, the home page included, answered HTTP 403 with a
+Cloudflare "Verifying Your Connection" page (`cdn-cgi/challenge-platform`) to curl
+(HTTP/1.1 and HTTP/2, any User-Agent, from two different machines) and to cycletls
+with a Chrome JA3 fingerprint. Only `robots.txt` answered 200. yt-dlp has no extractor
+for the site.
+
+**What did not work.**
+- The HentaiHaven route (lesson #15, plain `curl`): this zone challenges curl too.
+- The cycletls route (lesson #2): challenged as well.
+- Replaying the browser's `cf_clearance` cookie (with `pornhex_session` and
+  `XSRF-TOKEN`) from curl or cycletls with the browser's exact User-Agent: still the
+  challenge. The clearance is bound to the browser's own network fingerprint, so it
+  cannot be exported to another client.
+- A headless browser that announces itself: `--headless=new` with the default
+  User-Agent (`HeadlessChrome/…`) stays on "Just a moment…". Overriding the
+  User-Agent only through DevTools (`Network.setUserAgentOverride`) is not enough
+  either.
+
+**What works.** A real Chromium started `--headless=new` with
+`--disable-blink-features=AutomationControlled` and a `--user-agent` command-line
+flag equal to its own User-Agent with `HeadlessChrome` replaced by `Chrome`. The page
+loads in about 3 seconds. `src/browser-page.js` starts the browser once to read its
+real User-Agent from `/json/version`, then again with the corrected flag, drives it
+over the DevTools protocol (Node 22's global `WebSocket`, no npm dependency), waits
+until the challenge title is gone and the player's data exists, and deletes the
+throw-away profile. As root or inside a container it adds `--no-sandbox`.
+
+**The media host is not challenged.** The player defines
+`var videoSources = [{src, k, label, type}, …]`; the file URL is `src + "?h=" + k`.
+`k` is already percent-encoded (`…%3D`); encoding it again (`%253D`) gives nginx 403.
+After the player script runs, `window.videoSources[i].src` already carries `?h=`, so
+append the token only when it is missing. The tokened URL downloads with any HTTP
+client, with or without Referer, and supports range requests.
+
+**Key lesson.** Separate the page from the media before choosing a bypass: here only
+the HTML needs a browser, so a short headless browser visit plus the normal
+downloader is enough. Test a clearance cookie from a second client before designing
+around cookies; on this zone it does not transfer.

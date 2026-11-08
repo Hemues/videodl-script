@@ -697,5 +697,6 @@ default and the symlink were left for the owner.
   6. The CHANGELOG header dates for 2.0.10 (2026-07-17) and 2.0.30 (2026-03-21
      with 2.0.10 below it) are out of order and should be corrected by the owner
      (LESSONS #30).
+- 2026-11-08, CLI 2.0.142: first site whose every page needs a real browser engine (pornhex.com, Cloudflare managed challenge, clearance not transferable). New `src/browser-page.js` loads such pages in a local headless Chrome/Chromium/Edge; the container image ships Fedora chromium for it (LESSONS #31).
 - Next planned phase: none is written down. The next work is driven by site
   breakage reports. The rule for them is in AGENTS.md and LESSONS-LEARNED.md.

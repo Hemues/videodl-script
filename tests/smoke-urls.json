@@ -41,6 +41,15 @@
       "note": "Vimeo changes often; reported but does not gate"
     },
     {
+      "name": "pornhex-browser",
+      "url": "https://hu.pornhex.com/video/kg-cobr-foxxxy-drl-2",
+      "extractor": "Pornhex",
+      "minFormats": 3,
+      "optional": true,
+      "timeout": 180,
+      "note": "Cloudflare managed challenge on every page; needs a local Chromium-family browser (src/browser-page.js). The container image ships chromium. Optional: a third-party site."
+    },
+    {
       "name": "ssrf-loopback-rejected",
       "url": "http://127.0.0.1:8081/api/me",
       "expectError": "private",

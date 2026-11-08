@@ -8,7 +8,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 
 ## Supported Sites
 
-47 built-in extractors + yt-dlp fallback:
+48 built-in extractors + yt-dlp fallback:
 - ✅ **YouTube** — metadata extraction (downloads limited, see [YOUTUBE-LIMITATIONS.md](YOUTUBE-LIMITATIONS.md))
 - ✅ **xHamster** — full support
 - ✅ **PornHub** — full support
@@ -55,6 +55,7 @@ Additionally, when `yt-dlp` is installed on the system, videodl-cli automaticall
 - ✅ **Vtbe** — vtbe.to (JWPlayer → HLS master on `*.vtube.network`; reusable host, embedded by many WordPress "tube" sites)
 - ✅ **JustSwallows** — justswallows.live (WordPress/RetroTube; finds the vtbe.to embed and delegates to the Vtbe extractor)
 - ✅ **Skool** — skool.com classroom lessons (Mux HLS native video; YouTube fallback for older lessons; authenticated cookies required for correct title)
+- ✅ **Pornhex** — pornhex.com and its language subdomains (progressive MP4 480p–1080p; the page is loaded in a local headless Chrome/Chromium/Edge because of a Cloudflare managed challenge)
 - 🔄 **yt-dlp fallback** — 1000+ additional sites (requires `yt-dlp` on PATH)
 - ✅ **Direct URLs** — any `.mp4`, `.mkv`, `.webm`, `.m3u8` URL
 
@@ -414,3 +415,22 @@ await downloader.download({
 - Subtitle extraction
 - Live stream recording
 - Multi-part video handling
+
+### Pornhex — "needs a Chromium-family browser to pass its bot check"
+
+Every pornhex.com page (including the home page) answers non-browser clients with a
+Cloudflare managed challenge ("Verifying Your Connection", HTTP 403). curl, Node and
+cycletls' Chrome JA3 all get the challenge, and the `cf_clearance` cookie a browser
+earns cannot be replayed from another client (it is bound to the browser's own
+fingerprint). The extractor therefore loads the page in a locally installed
+Chromium-family browser, headless, through the DevTools protocol
+(`src/browser-page.js`), and reads the player's `videoSources` list.
+
+- Install Google Chrome, Chromium or Microsoft Edge, or point `VIDEODL_BROWSER` at
+  the browser executable. The container image ships Fedora's `chromium`.
+- The browser runs with a throw-away profile that is deleted afterwards. Your own
+  browser profile, cookies and history are never used.
+- The video files (`<host>.pornhex.com/volN/media/video/<id>/<quality>.mp4?h=<token>`)
+  are not challenged and download through the normal path. The `h` token is already
+  URL-encoded; encoding it again gives 403.
+- See `LESSONS-LEARNED.md #31`.

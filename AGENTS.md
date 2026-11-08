@@ -101,6 +101,10 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   reading fields (`LESSONS-LEARNED.md #28`).
 - **YouTube auto-translate** (`&tlang=`) answers 429 to anonymous requests. Keep the pacing
   and the cookie forwarding (`LESSONS-LEARNED.md #29`).
+- **Pornhex (2.0.142):** every page is a Cloudflare managed challenge that only a real browser passes;
+  the clearance cookie does not transfer to curl or cycletls. The page goes through
+  `src/browser-page.js` (local headless Chrome/Chromium/Edge, `VIDEODL_BROWSER`), the MP4s download
+  normally. The `k` token is already URL-encoded. `LESSONS-LEARNED.md #31`.
 - **HentaiHaven** must be fetched with `curl`, not Node or cycletls (Cloudflare managed
   challenge, `LESSONS-LEARNED.md #15`).
 - **Obfuscated HLS segment names** (`.html`, `.txt`) need `-allowed_extensions ALL`; and
