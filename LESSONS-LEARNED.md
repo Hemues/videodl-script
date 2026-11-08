@@ -42,6 +42,7 @@ Entries marked [OK] are verified in production. Entries marked [OPEN] are pendin
 31. Pornhex: a Cloudflare challenge only a browser passes; the clearance cookie does not transfer (added 2026-11-08)
 32. Chunked mode met a per-minute request limit (HTTP 429) on a 1 GB file (added 2026-11-08)
 33. ffmpeg skips rate-limited HLS segments and exits 0; HTTP 429 handled on every path (added 2026-11-08)
+34. A transfer cut mid-segment loses video silently; the retry relay became the default (added 2026-11-08)
 
 ---
 
@@ -877,8 +878,44 @@ paths were safer but still failed the whole download on a 429 at the first reque
 
 **Why not always the relay.** The normal path is what every other site has been verified with
 (smoke cases, months of use); the relay is used only after a host has shown it rate-limits.
+(Superseded in 2.0.145: a cut transfer loses video without any 429, so the relay is the default
+now - see #34.)
 
 **Key lesson.** ffmpeg's exit code does not prove an HLS download is complete: a segment that fails
 to open is skipped. Treat a 429/503 line in ffmpeg's output as an error, and test a downloader against
 a server that rate-limits on purpose (`tests/rate-limit/run.sh`), not only against sites that happen
 to be fast today.
+
+## #34 — A transfer cut mid-segment loses video silently; the relay became the default
+
+[OK] Verified 2026-11-08 (CLI 2.0.145; `tests/rate-limit/run.sh` 10 of 10 with a frame count,
+two public HLS streams byte-identical through the relay and plain ffmpeg).
+
+**Question.** After #33 the owner asked to "retry those segments maybe or do some research".
+
+**Research.** ffmpeg 8.1 `libavformat/hls.c`: a segment that fails to open is retried
+`seg_max_retry` times immediately (default 0), then "failed too many times, skipping"; a read error
+inside a segment closes it and moves to the next (`read_data_continuous`: `cur_seq_no++`); nested
+opens get only `headers user_agent cookies http_proxy referer rw_timeout icy`
+(`ffio_copy_url_options`, aviobuf.c), so `-reconnect*` cannot help. yt-dlp's native HLS downloader
+(`downloader/fragment.py`) retries each fragment `--fragment-retries 10` times on any HTTP error and on
+`IncompleteRead`, with no wait unless `--retry-sleep`, then SKIPS the fragment with a warning by
+default (`--skip-unavailable-fragments`), or aborts with `--abort-on-unavailable-fragments`.
+
+**Measured** (loopback server, transient fault on 2 of 10 segments, plain ffmpeg):
+a 500 or a 404 once each - full file (ffmpeg reopens once when a REUSED connection fails, by luck
+of keep-alive); a transfer cut halfway - exit 0, duration 20.04 s, **450 of 500 frames**.
+The test suite of #33 checked duration >= 19.5 s and would have passed that file.
+
+**Fix.** The relay of #33 is now the default for every http(s) and in-memory HLS input and retries
+everything: 429/503 waits, other errors 5 times with backoff, and a cut transfer is RESUMED from the
+exact byte (Range; or the already-sent bytes are skipped if the host ignores Range), so ffmpeg only
+ever sees whole segments. Keep-alive pools made it as fast as plain ffmpeg (first version: 23 s vs
+5 s on a 635 s stream). What it gives up on fails the job; `VIDEODL_HLS_SKIP_UNAVAILABLE=1` keeps
+the yt-dlp behaviour (warn and finish), `VIDEODL_HLS_RELAY=0` turns the relay off.
+
+**Key lessons.** (1) Check a video download by counting frames (`ffprobe -count_packets`), never by
+its duration: a gap keeps the timestamps. (2) Read the tool's source before trusting its retry
+options. (3) A relay in front of a tool must keep connections alive or it costs a handshake per
+request. (4) Not fixed here, found by the same check: `-bsf:a aac_adtstoasc` is applied to every HLS
+audio stream and fails when the chosen audio is not AAC (Apple's fMP4 example, both modes).

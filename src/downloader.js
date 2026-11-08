@@ -9,7 +9,7 @@ import { gunzipSync } from 'node:zlib';
 import { ensureFFmpeg } from './ffmpeg-helper.js';
 import { buildCookieHeader, buildFfmpegCookieString } from './cookies.js';
 import { detectDrm, DrmProtectedError } from './drm-detect.js';
-import { withRateLimitRetry, startHlsRelay, FFMPEG_RATE_LIMIT_RE } from './rate-limit.js';
+import { withRateLimitRetry, startHlsRelay, FFMPEG_RATE_LIMIT_RE, hlsRelayEnabled } from './rate-limit.js';
 
 const NAME_PATTERN = /\/([^/]+?)(?:\.([a-z0-9]{1,5}))?(?:\?|#|$)/i;
 
@@ -1497,19 +1497,21 @@ export class VideoDownloader extends EventEmitter {
       }
     }
 
-    // Rate-limited host: ffmpeg skips a segment that answers 429 and still exits 0,
-    // so the first run is stopped at the first 429/503 and this second run sends every
-    // request through a loopback relay that waits the rate limit out
-    // (src/rate-limit.js, LESSONS-LEARNED #33).
+    // Every HLS request goes through a loopback relay (src/rate-limit.js,
+    // LESSONS-LEARNED #33/#34): ffmpeg alone skips a segment that fails to open
+    // and cuts a segment whose transfer drops, and still exits 0. The relay
+    // retries, waits out 429/503, resumes cut transfers, and records what it
+    // gives up on. VIDEODL_HLS_RELAY=0 restores plain ffmpeg; then a 429/503 in
+    // ffmpeg's output still stops it and restarts the job through the relay.
     let relay = null;
-    if (options._hlsRelayMode) {
+    if (options._hlsRelayMode || (hlsRelayEnabled() && /^(https?:|data:)/i.test(hlsUrl))) {
       relay = await startHlsRelay({
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', ...(options.formatHeaders || {}) },
         cookieHeaderFor: (u) => (Array.isArray(options.cookies) ? buildCookieHeader(options.cookies, u) : ''),
         rejectUnauthorized: options.rejectUnauthorized !== false,
       });
       hlsUrl = await relay.input(hlsUrl);
-      console.log('[HLS] Downloading through the rate-limit relay (waits out HTTP 429/503 per request)');
+      console.log('[HLS] Downloading through the retry relay (retries segments, waits out HTTP 429/503, resumes cut transfers)');
     }
     const viaRelay = (u) => (relay && u ? relay.local(u) : u);
 
@@ -1745,12 +1747,17 @@ export class VideoDownloader extends EventEmitter {
           return;
         }
         if (relay && relay.failures.length > 0) {
-          try { fs.unlinkSync(incompletePath); } catch {}
-          reject(new Error(`HLS download incomplete: ${relay.failures.length} request(s) failed after retries (first: ${relay.failures[0]})`));
-          return;
+          const msg = `${relay.failures.length} request(s) failed after retries (first: ${relay.failures[0]})`;
+          if (/^(1|true|yes|on)$/i.test(String(process.env.VIDEODL_HLS_SKIP_UNAVAILABLE || '').trim()) && code === 0) {
+            console.log(`[HLS] WARNING: ${msg} - the video has gaps (VIDEODL_HLS_SKIP_UNAVAILABLE=1)`);
+          } else {
+            try { fs.unlinkSync(incompletePath); } catch {}
+            reject(new Error(`HLS download incomplete: ${msg}`));
+            return;
+          }
         }
-        if (relay && relay.stats.rateLimited) {
-          console.log(`[HLS] Rate limit waited out ${relay.stats.rateLimited} time(s) over ${relay.stats.requests} requests`);
+        if (relay && (relay.stats.rateLimited || relay.stats.retried || relay.stats.resumed)) {
+          console.log(`[HLS] Relay: ${relay.stats.requests} requests, ${relay.stats.rateLimited} rate-limit wait(s), ${relay.stats.retried} retr${relay.stats.retried === 1 ? 'y' : 'ies'}, ${relay.stats.resumed} resumed transfer(s)`);
         }
         if (code === 0) {
           // Rename .incomplete → final path before post-processing

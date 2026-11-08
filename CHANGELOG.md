@@ -2,6 +2,31 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.145] - 2026-11-08
+
+### Fixed (CLI 2.0.145, 2026-11-08)
+- **Every HLS download now goes through the retry relay** (`src/rate-limit.js`), not only after a 429.
+  Measured against a loopback server with transient faults on 2 of 10 segments: plain ffmpeg survived a
+  single 500 or 404 (it reopens once when a reused connection fails) but a transfer cut halfway through a
+  segment lost 2 s of video with exit 0 and a "full" duration (450 of 500 frames). The ffmpeg 8.1 source
+  explains it: a segment that fails to open is retried `seg_max_retry` times at once (default 0) and then
+  skipped, a segment whose read fails ends early, and the `reconnect*` options never reach segment
+  requests. The relay now, per playlist / key / segment request:
+  - waits out 429 / 503 (`Retry-After`, 10 waits),
+  - retries any other HTTP error or network fault 5 times with a 1-2-4-8-16 s backoff
+    (yt-dlp's own HLS downloader retries a fragment 10 times, with no wait by default),
+  - **resumes a cut transfer from the exact byte** with a Range request (8 resumes; a host that ignores
+    Range is handled by skipping the bytes already sent), with a 60 s idle timeout,
+  - keeps connections alive (without that every segment paid a TLS handshake: 23 s instead of 5 s for a
+    635 s public stream; with it relay and plain ffmpeg are equal in time and byte-identical in output).
+  A request it gives up on fails the job (`HLS download incomplete: …`) instead of saving a shorter video.
+- New environment variables: `VIDEODL_HLS_SKIP_UNAVAILABLE=1` finishes the job with a warning when a
+  segment never arrives (yt-dlp's default behaviour); `VIDEODL_HLS_RELAY=0` restores plain ffmpeg (a
+  429/503 in its output still restarts the job through the relay).
+- `tests/rate-limit/run.sh` checks ALL 500 video frames instead of the duration (a file with a 2 s gap
+  still reports 20.04 s) and has four new cases: a 500 and a 404 on two segments, a transfer cut halfway,
+  and the relay switched off. `LESSONS-LEARNED.md #34`.
+
 ## [2.0.144] - 2026-11-08
 
 ### Fixed (CLI 2.0.144, 2026-11-08)

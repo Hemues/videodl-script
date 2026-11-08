@@ -260,7 +260,7 @@ Cause: `-o` contained `..` or resolved outside `-d`. Fix: plain file name in `-o
 Cause: the CDN choice per page load and the missing session cookies (LESSONS #19). Fix: update to 2.0.139, load the page again, pass `--cookies`.
 
 ### `HTTP 429 (rate limit) … waiting Ns` or `[HLS relay]` lines during a download
-Not an error: the host limits requests per minute and videodl waits as long as the host asks, then continues (LESSONS #32, #33). A download that still fails says `HLS download incomplete` or reports the 429 after 6 waits; try again later.
+Not an error: the host limits requests or a segment failed once, and videodl waits / retries / resumes, then continues (LESSONS #32-#34). Every HLS download goes through a local retry relay. A download that still fails says `HLS download incomplete`; try again later, or set `VIDEODL_HLS_SKIP_UNAVAILABLE=1` to accept a video with gaps.
 
 ### `HTTP 429 Too Many Requests` on subtitles
 Cause: the YouTube auto-translate endpoint throttles anonymous requests (LESSONS #29). Fix: `--cookies`, fewer languages.

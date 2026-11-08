@@ -148,6 +148,8 @@ There is no configuration file. Every setting is a command line option or an env
 | `VIDEODL_ALLOW_PRIVATE_URLS` | unset (private addresses refused) | `src/cli.js`, `src/url-guard.js` | `1` allows loopback, LAN and link-local URLs | you download from a NAS or a LAN server. Same as `--allow-private-urls` |
 | `VIDEODL_SOLVER_UNSANDBOXED` | unset (solver sandboxed) | `src/solver-sandbox.js` | `1` runs the YouTube challenge solver without the permission sandbox; prints a loud warning | debugging the solver only. Never set it on a shared host |
 | `VIDEODL_BROWSER` | unset (searched: Chrome, Edge, Chromium, Brave in the usual install paths) | `src/browser-page.js` | path to a Chromium-family browser executable | a site needs a browser to pass its bot check (pornhex.com) and the browser is not in a standard location |
+| `VIDEODL_HLS_RELAY` | on | `src/rate-limit.js` | `0` sends HLS straight to ffmpeg (no retries, no resume; a 429 still restarts through the relay) | debugging only |
+| `VIDEODL_HLS_SKIP_UNAVAILABLE` | unset (a segment that never arrives fails the job) | `src/downloader.js` | `1` finishes the job with a warning, the video has a gap (yt-dlp's default) | a source with a permanently broken segment |
 | `VIDEODL_BROWSER_NO_SANDBOX` | unset (`--no-sandbox` only as root or in a container) | `src/browser-page.js` | `1` starts the browser with `--no-sandbox` | the browser refuses to start because its sandbox is unavailable |
 | `VIDEODL_CAPTCHA_PROVIDER` | `wit` | `src/captcha-solver.js`, `src/cookie-generator.js` | `wit` (free) or `2captcha` (paid) | you use the paid solver |
 | `VIDEODL_CAPTCHA_API_KEY` | unset | `src/captcha-solver.js`, `src/cookie-generator.js` | API key for the chosen solver. Secret | you need CAPTCHA solving. Keep it out of git and out of shell history |
@@ -479,7 +481,7 @@ Two causes, both fixed in 2.0.139. Update to 2.0.139. If it still happens, load 
 
 ### `HTTP 429 (rate limit)` or `[HLS relay]` lines during a download
 
-The media host limits requests per minute. videodl waits the time the host asks for (`Retry-After`, at most 120 s per wait) and continues; an HLS download is switched to a local relay that does the same for every segment. Nothing to do. If the download still fails (`HLS download incomplete`, or a 429 after six waits), start it again later (LESSONS #32, #33).
+The media host limits requests per minute, or a segment failed once. videodl waits the time the host asks for (`Retry-After`, at most 120 s per wait), retries other errors with a backoff and resumes a cut transfer from the exact byte; every HLS download runs through a local relay that does this per segment. Nothing to do. If the download still fails (`HLS download incomplete`, or a 429 after the last wait), start it again later, or set `VIDEODL_HLS_SKIP_UNAVAILABLE=1` to accept a video with a gap (LESSONS #32-#34).
 
 ### `HTTP 429 Too Many Requests` on subtitles
 

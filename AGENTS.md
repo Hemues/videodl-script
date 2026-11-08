@@ -114,9 +114,11 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   Test the largest format of a new site, not the smallest. `LESSONS-LEARNED.md #32`.
 - **HTTP 429 / 503 on every path (2.0.144):** `src/rate-limit.js`. Node downloads repeat the
   request after `Retry-After`; HLS is the trap: ffmpeg SKIPS a segment that answers 429 and
-  exits 0 (a short file that looks fine). The ffmpeg run is stopped at the first 429/503 line and
-  restarted through `startHlsRelay()` (loopback relay that waits out each refusal and fails the
-  job on a lost segment). Never trust ffmpeg's exit code as proof of a complete HLS download.
+  exits 0 (a short file that looks fine), and a transfer cut mid-segment silently loses the rest
+  of that segment. Since 2.0.145 EVERY HLS download runs through `startHlsRelay()` (retries,
+  429 waits, byte-exact resume, keep-alive; `VIDEODL_HLS_RELAY=0` = plain ffmpeg, which still
+  restarts through the relay on a 429). Never trust ffmpeg's exit code or the duration as proof
+  of a complete download - count frames (`LESSONS-LEARNED.md #34`).
   Gate: `bash tests/rate-limit/run.sh` (no network, ~3 min). `LESSONS-LEARNED.md #33`.
 - **HentaiHaven** must be fetched with `curl`, not Node or cycletls (Cloudflare managed
   challenge, `LESSONS-LEARNED.md #15`).

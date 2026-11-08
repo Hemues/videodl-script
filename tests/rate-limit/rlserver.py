@@ -16,6 +16,8 @@ lock = threading.Lock()
 hits = []
 seen = set()
 stats = {"429": 0, "ok": 0}
+# transient faults hit these segments once each (env FAULTY, a regex)
+FAULTY = re.compile(os.environ.get("FAULTY", r"seg0[36].ts$"))
 
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -34,7 +36,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET(head=True)
     def do_GET(self, head=False):
-        m = re.match(r"^/(rl|first|plain)/(.+)$", self.path.split("?")[0])
+        m = re.match(r"^/(rl|first|plain|e500|e404|drop)/(.+)$", self.path.split("?")[0])
         if not m:
             self.send_error(404); return
         mode, name = m.group(1), m.group(2)
@@ -53,6 +55,19 @@ class H(http.server.BaseHTTPRequestHandler):
             elif mode == "first" and name not in seen and self.headers.get("Range"):
                 seen.add(name)
                 self._429(2); return
+            elif mode in ("e500", "e404") and FAULTY.search(name) and name not in seen:
+                # transient fault: the FIRST request for each segment fails once
+                seen.add(name)
+                code = 500 if mode == "e500" else 404
+                stats["429"] += 1
+                print(f"{time.strftime('%H:%M:%S')} {code} {self.path} transient", flush=True)
+                self.send_response(code)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        drop_half = mode == "drop" and FAULTY.search(name) and name not in seen
+        if drop_half:
+            seen.add(name)
         size = os.path.getsize(path)
         start, end = 0, size - 1
         rng = self.headers.get("Range")
@@ -77,6 +92,17 @@ class H(http.server.BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             f.seek(start)
             left = end - start + 1
+            if drop_half:
+                # send half the promised body, then cut the connection (a dropped transfer)
+                print(f"{time.strftime('%H:%M:%S')} DROP {self.path} after {left // 2} bytes", flush=True)
+                self.wfile.write(f.read(left // 2))
+                self.wfile.flush()
+                self.close_connection = True
+                try:
+                    self.connection.shutdown(2)
+                except OSError:
+                    pass
+                return
             while left > 0:
                 b = f.read(min(65536, left))
                 if not b: break
