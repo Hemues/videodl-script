@@ -297,6 +297,7 @@ Owner rules that apply here: uploads (git push, release creation) are made on th
 | --- | --- |
 | `README.md` | This file: what the tool is, the current version, architecture, commands, configuration |
 | `docs/HOWTO-USE.md` | Operator manual: install, every option, examples, troubleshooting, per-site limits |
+| `docs/BROWSER-GATED-SITES.md` | The known mechanism for sites whose every page is behind a Cloudflare challenge: decision tree, `src/browser-page.js`, checklist for a new site, agent permissions |
 | `AGENTS.md` | Rules and traps for anyone (human or agent) changing this repository |
 | `CHANGELOG.md` | What changed in each version, newest first |
 | `LESSONS-LEARNED.md` | Numbered postmortems: symptom, root cause, fix, rule |

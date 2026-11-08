@@ -433,4 +433,4 @@ Chromium-family browser, headless, through the DevTools protocol
 - The video files (`<host>.pornhex.com/volN/media/video/<id>/<quality>.mp4?h=<token>`)
   are not challenged and download through the normal path. The `h` token is already
   URL-encoded; encoding it again gives 403.
-- See `LESSONS-LEARNED.md #31`.
+- See `LESSONS-LEARNED.md #31` and `docs/BROWSER-GATED-SITES.md` (how to add the next such site).

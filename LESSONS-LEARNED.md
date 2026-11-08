@@ -812,6 +812,9 @@ After the player script runs, `window.videoSources[i].src` already carries `?h=`
 append the token only when it is missing. The tokened URL downloads with any HTTP
 client, with or without Referer, and supports range requests.
 
+The mechanism, the decision tree and the checklist for the next such site are in
+`docs/BROWSER-GATED-SITES.md`.
+
 **Key lesson.** Separate the page from the media before choosing a bypass: here only
 the HTML needs a browser, so a short headless browser visit plus the normal
 downloader is enough. Test a clearance cookie from a second client before designing

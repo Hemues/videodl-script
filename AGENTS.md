@@ -20,6 +20,7 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - Read `README.md` for the overview, the version, the architecture and the support table. Read `docs/HOWTO-USE.md` for every command and option.
 - Read `LESSONS-LEARNED.md` before touching extractors, HTTP/TLS behavior, subtitles, defaults, or packaging. Entries #20 to #30 were added on 2026-10-31 and cover the CRLF slip, the silent subtitle default, the symlink, the mode flips and the Skool and playlist fixes.
 - Read `STORYLINE.md` for the phases and the decisions behind the current state.
+- A site that answers with a Cloudflare challenge on every page: read `docs/BROWSER-GATED-SITES.md` first. It is a known mechanism (decision tree, page loader, new-site checklist, how to work on it in auto mode).
 - Check `package.json` scripts before assuming the build command; this project uses npm tooling and bundles external runtime helpers such as ffmpeg/cycletls where needed.
 - To update from yt-dlp and ship it end-to-end (rebuild CLI → publish → embed in videodl-container → gate → deploy → verify), follow `UPDATE-FROM-YTDLP.md` and run `bash update-from-upstream.sh {check|run|status}` on the build host (host-specific values live in the private `/etc/videodl-upstream.env`, never in this repo).
 
@@ -104,7 +105,8 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
 - **Pornhex (2.0.142):** every page is a Cloudflare managed challenge that only a real browser passes;
   the clearance cookie does not transfer to curl or cycletls. The page goes through
   `src/browser-page.js` (local headless Chrome/Chromium/Edge, `VIDEODL_BROWSER`), the MP4s download
-  normally. The `k` token is already URL-encoded. `LESSONS-LEARNED.md #31`.
+  normally. The `k` token is already URL-encoded. `LESSONS-LEARNED.md #31`,
+  `docs/BROWSER-GATED-SITES.md` (the mechanism for the next such site).
 - **HentaiHaven** must be fetched with `curl`, not Node or cycletls (Cloudflare managed
   challenge, `LESSONS-LEARNED.md #15`).
 - **Obfuscated HLS segment names** (`.html`, `.txt`) need `-allowed_extensions ALL`; and
