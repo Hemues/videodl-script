@@ -107,6 +107,10 @@ This is the standalone `videodl` Node.js CLI project. It implements native extra
   `src/browser-page.js` (local headless Chrome/Chromium/Edge, `VIDEODL_BROWSER`), the MP4s download
   normally. The `k` token is already URL-encoded. `LESSONS-LEARNED.md #31`,
   `docs/BROWSER-GATED-SITES.md` (the mechanism for the next such site).
+- **Chunked downloads and HTTP 429 (2.0.143):** chunked mode is one request per 10 MB; hosts with a
+  per-minute limit (pornhex media: 60/min) answer 429. Every chunk request goes through
+  `_rangeToFile()` (waits `Retry-After`, truncates, retries; after a 429 the rest is one request).
+  Test the largest format of a new site, not the smallest. `LESSONS-LEARNED.md #32`.
 - **HentaiHaven** must be fetched with `curl`, not Node or cycletls (Cloudflare managed
   challenge, `LESSONS-LEARNED.md #15`).
 - **Obfuscated HLS segment names** (`.html`, `.txt`) need `-allowed_extensions ALL`; and

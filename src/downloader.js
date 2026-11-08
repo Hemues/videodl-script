@@ -810,18 +810,9 @@ export class VideoDownloader extends EventEmitter {
       let chunked = 0;
       while (chunked < probeTotal) {
         const end = Math.min(chunked + CHUNK_SIZE - 1, probeTotal - 1);
-        const chunkHeaders = { ...headers, 'Range': `bytes=${chunked}-${end}` };
-
-        const chunkStream = got.stream(url, { ...reqBase, headers: chunkHeaders });
-        const appendStream = fs.createWriteStream(filepath, { flags: chunked === 0 ? 'w' : 'a' });
-
-        const base = chunked;
-        chunkStream.on('downloadProgress', progress => {
-          if (onProgress) onProgress(base + progress.transferred, probeTotal);
-        });
-
-        await pipeline(chunkStream, appendStream);
-        chunked = base + (end - base + 1);
+        // _rangeToFile truncates to `chunked` first (0 for the first chunk) and waits out a 429/503.
+        await this._rangeToFile(url, reqBase, headers, chunked, end, filepath, onProgress, probeTotal);
+        chunked = end + 1;
       }
 
       const finalSize = fs.statSync(filepath).size;
@@ -902,18 +893,10 @@ export class VideoDownloader extends EventEmitter {
     // Download first chunk and measure speed
     const firstChunkEnd = Math.min(downloaded + CHUNK_SIZE - 1, totalSize - 1);
     const firstChunkSize = firstChunkEnd - downloaded + 1;
-    const firstChunkHeaders = { ...headers, 'Range': `bytes=${downloaded}-${firstChunkEnd}` };
-
     const firstChunkStart = Date.now();
-    const firstChunkStream = got.stream(url, { ...reqBase, headers: firstChunkHeaders });
-    const firstAppendStream = fs.createWriteStream(filepath, { flags: 'a' });
-
     const firstBase = downloaded;
-    firstChunkStream.on('downloadProgress', progress => {
-      if (onProgress) onProgress(firstBase + progress.transferred, totalSize);
-    });
-
-    await pipeline(firstChunkStream, firstAppendStream);
+    let rateLimited = (await this._rangeToFile(url, reqBase, headers, firstBase, firstChunkEnd,
+      filepath, onProgress, totalSize)).rateLimited;
     downloaded = firstBase + firstChunkSize;
 
     const firstChunkElapsed = (Date.now() - firstChunkStart) / 1000;
@@ -922,24 +905,15 @@ export class VideoDownloader extends EventEmitter {
     // Compare to pre-throttle average speed
     const speedRatio = firstChunkSpeed / avgSpeed;
 
-    if (speedRatio < CHUNK_SPEEDUP_THRESHOLD) {
-      // Chunking didn't help significantly — abort chunking, continue direct
-      console.log(`[download] Chunking not beneficial (${(firstChunkSpeed / 1048576).toFixed(2)} MB/s vs ${(avgSpeed / 1048576).toFixed(2)} MB/s avg, ratio ${speedRatio.toFixed(2)}x) → continuing direct`);
-      
-      // Continue downloading the rest directly (append mode)
-      const remainingAfterChunk = totalSize - downloaded;
-      if (remainingAfterChunk > 0) {
-        // Download remaining bytes directly, appending to existing file
-        const continueStream = got.stream(url, {
-          ...reqBase,
-          headers: { ...headers, 'Range': `bytes=${downloaded}-${totalSize - 1}` }
-        });
-        const continueAppend = fs.createWriteStream(filepath, { flags: 'a' });
-        const continueBase = downloaded;
-        continueStream.on('downloadProgress', progress => {
-          if (onProgress) onProgress(continueBase + progress.transferred, totalSize);
-        });
-        await pipeline(continueStream, continueAppend);
+    if (rateLimited || speedRatio < CHUNK_SPEEDUP_THRESHOLD) {
+      // Chunking didn't help significantly (or the host limits requests) — continue with one request
+      if (rateLimited) {
+        console.log('[download] Host rate-limits requests → continuing with one continuous request');
+      } else {
+        console.log(`[download] Chunking not beneficial (${(firstChunkSpeed / 1048576).toFixed(2)} MB/s vs ${(avgSpeed / 1048576).toFixed(2)} MB/s avg, ratio ${speedRatio.toFixed(2)}x) → continuing direct`);
+      }
+      if (totalSize - downloaded > 0) {
+        await this._rangeToFile(url, reqBase, headers, downloaded, totalSize - 1, filepath, onProgress, totalSize);
       }
       return fs.statSync(filepath).size;
     }
@@ -950,23 +924,60 @@ export class VideoDownloader extends EventEmitter {
     console.log(`[download] Chunking confirmed beneficial (${(firstChunkSpeed / 1048576).toFixed(2)} MB/s, ${speedRatio.toFixed(1)}x speedup) — ${remainingChunks} chunk(s) left`);
 
     // ── Resume from where direct download left off using Range chunks ──
+    // After the first rate limit (429/503) the rest is fetched as ONE request, so no
+    // further requests count against the host's per-minute limit.
     while (downloaded < totalSize) {
-      const end = Math.min(downloaded + CHUNK_SIZE - 1, totalSize - 1);
-      const chunkHeaders = { ...headers, 'Range': `bytes=${downloaded}-${end}` };
-
-      const chunkStream = got.stream(url, { ...reqBase, headers: chunkHeaders });
-      const appendStream = fs.createWriteStream(filepath, { flags: 'a' });
-
-      const base = downloaded;
-      chunkStream.on('downloadProgress', progress => {
-        if (onProgress) onProgress(base + progress.transferred, totalSize);
-      });
-
-      await pipeline(chunkStream, appendStream);
-      downloaded = base + (end - base + 1);
+      const end = rateLimited ? totalSize - 1 : Math.min(downloaded + CHUNK_SIZE - 1, totalSize - 1);
+      const r = await this._rangeToFile(url, reqBase, headers, downloaded, end, filepath, onProgress, totalSize);
+      if (r.rateLimited && !rateLimited && end < totalSize - 1) {
+        console.log('[download] Host rate-limits requests → fetching the rest with one continuous request');
+      }
+      rateLimited = rateLimited || r.rateLimited;
+      downloaded = end + 1;
     }
 
     return fs.statSync(filepath).size;
+  }
+
+  /**
+   * Fetch bytes `start..end` of `url` and append them to `filepath`, retrying
+   * on a rate limit. Before every attempt the file is cut back to `start`, so a
+   * failed attempt never leaves partial bytes behind.
+   *
+   * Why: chunked mode makes one HTTP request per 10 MB. Some media hosts limit
+   * requests per minute (pornhex: `x-ratelimit-limit: 60`, 429 with
+   * `Retry-After`), so a 1 GB file (~100 chunks) always hit the limit and the
+   * whole download failed (LESSONS-LEARNED #32).
+   *
+   * @returns {Promise<{rateLimited: boolean}>} rateLimited: a 429/503 was seen and waited out
+   */
+  async _rangeToFile(url, reqBase, headers, start, end, filepath, onProgress, total, maxRetries = 6) {
+    let rateLimited = false;
+    for (let attempt = 0; ; attempt++) {
+      if (fs.existsSync(filepath) && fs.statSync(filepath).size > start) {
+        fs.truncateSync(filepath, start);
+      }
+      const stream = got.stream(url, { ...reqBase, headers: { ...headers, Range: `bytes=${start}-${end}` } });
+      const out = fs.createWriteStream(filepath, { flags: 'a' });
+      stream.on('downloadProgress', p => { if (onProgress) onProgress(start + p.transferred, total); });
+      try {
+        await pipeline(stream, out);
+        return { rateLimited };
+      } catch (err) {
+        const status = err?.response?.statusCode;
+        if ((status === 429 || status === 503) && attempt < maxRetries) {
+          rateLimited = true;
+          const hdr = String(err.response.headers?.['retry-after'] ?? '').trim();
+          let waitS = /^\d+$/.test(hdr) ? parseInt(hdr, 10)
+            : (hdr && !isNaN(Date.parse(hdr)) ? Math.ceil((Date.parse(hdr) - Date.now()) / 1000) : 5 * 2 ** attempt);
+          waitS = Math.min(Math.max(waitS, 1), 120);
+          console.log(`[download] HTTP ${status} (rate limit) at ${(start / 1048576).toFixed(1)} MB — waiting ${waitS}s, then retrying (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, waitS * 1000 + 500));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   /**

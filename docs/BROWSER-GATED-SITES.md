@@ -49,6 +49,11 @@ Run every probe from the build host. Record what each step returns.
      write it down as a new lesson before building anything.
 7. Test whether the media URL needs a `Referer`, a cookie or the browser's User-Agent
    (try without each). Put only what is needed into the format's `headers`.
+8. Test the **largest** format to the end. Media hosts can limit requests per minute
+   (pornhex: 60, HTTP 429 with `Retry-After`); the downloader's chunked mode makes one request
+   per 10 MB, so only a big file shows the limit. Since CLI 2.0.143 the downloader waits out a
+   429/503 and continues with one continuous request (LESSONS #32); check the log for
+   `HTTP 429 (rate limit)` lines and read the host's `x-ratelimit-*` headers once.
 
 ## 3. Why each simpler route fails (measured on pornhex.com, 2026-11-08)
 

@@ -2,6 +2,20 @@
 
 All notable changes to videodl-cli will be documented in this file.
 
+## [2.0.143] - 2026-11-08
+
+### Fixed (CLI 2.0.143, 2026-11-08)
+- **Chunked downloads no longer fail on a per-minute request limit (HTTP 429).** Chunked mode makes one
+  request per 10 MB. The pornhex media host allows 60 requests per minute (`x-ratelimit-limit: 60`,
+  429 with `Retry-After: 13`), so every file above ~600 MB failed with "Request failed with status
+  code 429" (the 1080p of a 31-minute video: two failed attempts in the container on 2026-11-08).
+  Every range request now goes through `_rangeToFile()` in `downloader.js`: on 429 or 503 it waits
+  `Retry-After` (capped at 120 s; exponential backoff when absent), cuts the file back to the chunk
+  start, and retries (6 attempts). After the first rate limit the throttle path fetches the rest with
+  ONE continuous request, so nothing further counts against the limit. The 403 bounded-Range path
+  keeps its 10 MB chunks and gets the same retry. Verified: the 1080p file (707 MB, duration equal to
+  the page) downloads in full. `LESSONS-LEARNED.md #32`.
+
 ## [2.0.142] - 2026-11-08
 
 ### Added (CLI 2.0.142, 2026-11-08)

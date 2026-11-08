@@ -40,6 +40,7 @@ Entries marked [OK] are verified in production. Entries marked [OPEN] are pendin
 29. YouTube auto-translate answers 429 to anonymous requests (added 2026-10-31)
 30. Documentation drift: stale tags, file names, counts and CHANGELOG dates (added 2026-10-31)
 31. Pornhex: a Cloudflare challenge only a browser passes; the clearance cookie does not transfer (added 2026-11-08)
+32. Chunked mode met a per-minute request limit (HTTP 429) on a 1 GB file (added 2026-11-08)
 
 ---
 
@@ -819,3 +820,30 @@ The mechanism, the decision tree and the checklist for the next such site are in
 the HTML needs a browser, so a short headless browser visit plus the normal
 downloader is enough. Test a clearance cookie from a second client before designing
 around cookies; on this zone it does not transfer.
+
+---
+
+## #32 — Chunked mode met a per-minute request limit (HTTP 429)
+
+[OK] Verified 2026-11-08 (CLI 2.0.143; the 1080p pornhex file, 707 MB, downloaded in full).
+
+**Symptom.** The first real use of the Pornhex extractor in the container (1080p, ~1 GB) failed twice:
+"Download failed: Request failed with status code 429 (Too Many Requests)" after
+"Throttling detected … switching to chunked" and "69 chunk(s) left". The 480p test (213 MB) had passed.
+
+**Cause.** The adaptive downloader switches to chunked mode when a single connection slows down: one
+HTTP request per 10 MB, one after another. The media host counts requests: 60 sequential 10 MB ranges
+answered 206, the 60th request after 46 s answered 429 with `x-ratelimit-limit: 60`,
+`x-ratelimit-remaining: 0`, `retry-after: 13`. A file above ~600 MB needs more than 60 requests, and the
+chunk loop had no retry at all: the first 429 ended the whole download. The 480p file needed 21 requests
+and stayed under the limit, so the first test could not see it.
+
+**Fix.** `_rangeToFile()` (downloader.js) is used for every range request of the chunked paths: it
+truncates the file to the chunk start before each attempt (no partial bytes from a failed attempt), and on
+429/503 waits `Retry-After` (seconds or HTTP date, capped at 120 s, backoff 5·2^n s when absent) and
+retries up to 6 times. After the first rate limit the throttle path asks for the whole rest in one
+request; a slower single connection beats a stream of requests that the host refuses.
+
+**Key lesson.** A download test must cover the largest format, not the smallest: request-count limits
+scale with file size. When a host answers 429, read its `x-ratelimit-*` and `retry-after` headers before
+designing the retry; they state the limit exactly.
